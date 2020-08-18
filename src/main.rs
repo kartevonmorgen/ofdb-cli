@@ -4,11 +4,17 @@ use reqwest::blocking::Client;
 use std::{fs::File, io, path::PathBuf};
 use structopt::StructOpt;
 
-const API_URL: &str = "https://api.ofdb.io/v0";
-
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ofdb", about = "CLI for OpenFairDB", author)]
-enum Opt {
+struct Opt {
+    #[structopt(long = "api-url", help = "The URL of the JSON API")]
+    api: String,
+    #[structopt(subcommand)]
+    cmd: SubCommand,
+}
+
+#[derive(Debug, StructOpt)]
+enum SubCommand {
     #[structopt(about = "Import new entries")]
     Import {
         #[structopt(parse(from_os_str), help = "JSON file")]
@@ -19,19 +25,19 @@ enum Opt {
 fn main() -> Result<()> {
     env_logger::init();
     let opt = Opt::from_args();
-    match opt {
-        Opt::Import { file } => import(file),
+    match opt.cmd {
+        SubCommand::Import { file } => import(&opt.api, file),
     }
 }
 
-fn import(path: PathBuf) -> Result<()> {
+fn import(api: &str, path: PathBuf) -> Result<()> {
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
     let places: Vec<NewPlace> = serde_json::from_reader(reader)?;
     log::debug!("Read {} places from JSON file", places.len());
     let client = reqwest::blocking::Client::new();
     for new_place in &places {
-        if let Some(possible_duplicates) = search_duplicates(&client, new_place)? {
+        if let Some(possible_duplicates) = search_duplicates(api, &client, new_place)? {
             println!(
                 "Found {} possible duplicates for '{}':",
                 possible_duplicates.len(),
@@ -47,10 +53,11 @@ fn import(path: PathBuf) -> Result<()> {
 }
 
 fn search_duplicates(
+    api: &str,
     client: &Client,
     new_place: &NewPlace,
 ) -> Result<Option<Vec<PlaceSearchResult>>> {
-    let url = format!("{}/search/duplicates", API_URL);
+    let url = format!("{}/search/duplicates", api);
     let res = client.post(&url).json(&new_place).send()?;
     let res: Vec<PlaceSearchResult> = res.json()?;
     Ok(if res.is_empty() { None } else { Some(res) })
