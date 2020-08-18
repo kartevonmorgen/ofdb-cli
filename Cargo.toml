@@ -1,0 +1,29 @@
+[package]
+name = "ofdb-cli"
+version = "0.0.0"
+authors = ["slowtec GmbH <post@slowtec.de>"]
+edition = "2018"
+
+[[bin]]
+name = "ofdb"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+env_logger = "0.7"
+log = "0.4"
+ofdb-boundary = { version = "*", features = [ "extra-derive" ] }
+serde_json = "1"
+structopt = "0.3"
+
+[dependencies.reqwest]
+version = "0.10"
+default-features = false
+features = ["rustls-tls", "blocking", "json"]
+
+[patch.crates-io]
+ofdb-entities = { git = "https://github.com/kartevonmorgen/openfairdb" }
+ofdb-boundary = { git = "https://github.com/kartevonmorgen/openfairdb" }
+
+[profile.release]
+lto = true
