@@ -1,8 +1,9 @@
 use anyhow::Result;
-use ofdb_boundary::{NewPlace, PlaceSearchResult};
+use ofdb_boundary::{Entry, NewPlace, PlaceSearchResult};
 use reqwest::blocking::Client;
 use std::{collections::HashMap, fs::File, io, path::PathBuf};
 use structopt::StructOpt;
+use uuid::Uuid;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ofdb", about = "CLI for OpenFairDB", author)]
@@ -20,6 +21,11 @@ enum SubCommand {
         #[structopt(parse(from_os_str), help = "JSON file")]
         file: PathBuf,
     },
+    #[structopt(about = "Read entry")]
+    Read {
+        #[structopt(required = true, min_values = 1, help = "UUID")]
+        uuids: Vec<Uuid>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -27,6 +33,7 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
     match opt.cmd {
         SubCommand::Import { file } => import(&opt.api, file),
+        SubCommand::Read { uuids } => read(&opt.api, uuids),
     }
 }
 
@@ -85,6 +92,27 @@ fn import(api: &str, path: PathBuf) -> Result<()> {
         serde_json::to_writer(file, &places_with_errors)?;
         log::warn!("{} places contain errors ", places_with_errors.len());
     }
+    Ok(())
+}
+
+fn read(api: &str, uuids: Vec<Uuid>) -> Result<()> {
+    log::debug!("Read {} places", uuids.len());
+    let uuids = uuids
+        .into_iter()
+        .map(Uuid::to_simple)
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let url = format!("{}/entries/{}", api, uuids);
+    let client = reqwest::blocking::Client::new();
+    let res = client.get(&url).send()?;
+
+    // assert the response can be deserialized
+    let res: Vec<Entry> = res.json()?;
+
+    // and serialize it again ;-)
+    println!("{}", serde_json::to_string(&res)?);
+
     Ok(())
 }
 
