@@ -1,6 +1,6 @@
 use anyhow::Result;
-use ofdb_boundary::{Entry, NewPlace, PlaceSearchResult};
-use reqwest::blocking::Client;
+use ofdb_boundary::{Entry, UpdatePlace};
+use ofdb_cli::*;
 use std::{fs::File, io, path::PathBuf};
 use structopt::StructOpt;
 use uuid::Uuid;
@@ -47,23 +47,9 @@ fn main() -> Result<()> {
 }
 
 fn read(api: &str, uuids: Vec<Uuid>) -> Result<()> {
-    log::debug!("Read {} places", uuids.len());
-    let uuids = uuids
-        .into_iter()
-        .map(Uuid::to_simple)
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let url = format!("{}/entries/{}", api, uuids);
     let client = reqwest::blocking::Client::new();
-    let res = client.get(&url).send()?;
-
-    // assert the response can be deserialized
-    let res: Vec<Entry> = res.json()?;
-
-    // and serialize it again ;-)
-    println!("{}", serde_json::to_string(&res)?);
-
+    let entries = read_entries(api, &client, uuids)?;
+    println!("{}", serde_json::to_string(&entries)?);
     Ok(())
 }
 
@@ -73,41 +59,18 @@ fn update(api: &str, path: PathBuf) -> Result<()> {
     let places: Vec<Entry> = serde_json::from_reader(reader)?;
     log::debug!("Read {} places from JSON file", places.len());
     let client = reqwest::blocking::Client::new();
-    for entry in &places {
-        match update_place(api, &client, &entry) {
-            Ok(id) => {
-                debug_assert!(id == entry.id);
-                log::debug!("Successfully updated '{}' with ID={}", entry.title, id);
+    for entry in places {
+        let id = entry.id.clone();
+        let update = UpdatePlace::from(entry);
+        match update_place(api, &client, &id, &update) {
+            Ok(updated_id) => {
+                debug_assert!(updated_id == id);
+                log::debug!("Successfully updated '{}' with ID={}", update.title, id);
             }
             Err(err) => {
-                log::warn!("Could not update '{}': {}", entry.title, err);
+                log::warn!("Could not update '{}': {}", update.title, err);
             }
         }
     }
     Ok(())
-}
-
-fn search_duplicates(
-    api: &str,
-    client: &Client,
-    new_place: &NewPlace,
-) -> Result<Option<Vec<PlaceSearchResult>>> {
-    let url = format!("{}/search/duplicates", api);
-    let res = client.post(&url).json(&new_place).send()?;
-    let res: Vec<PlaceSearchResult> = res.json()?;
-    Ok(if res.is_empty() { None } else { Some(res) })
-}
-
-fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {
-    let url = format!("{}/entries", api);
-    let res = client.post(&url).json(&new_place).send()?;
-    Ok(res.json()?)
-}
-
-fn update_place(api: &str, client: &Client, entry: &Entry) -> Result<String> {
-    let mut entry = entry.clone();
-    entry.version += 1;
-    let url = format!("{}/entries/{}", api, entry.id);
-    let res = client.put(&url).json(&entry).send()?;
-    Ok(res.json()?)
 }

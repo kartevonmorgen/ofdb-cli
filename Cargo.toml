@@ -24,6 +24,14 @@ version = "0.10"
 default-features = false
 features = ["rustls-tls", "blocking", "json"]
 
+[dev-dependencies]
+csv = "1.1"
+url = "2.2"
+uuid = { version = "0.8", features = [ "serde" ] }
+
+[patch.crates-io]
+ofdb-boundary = { git = "https://github.com/kartevonmorgen/openfairdb" }
+
 [profile.release]
 lto = true
 opt-level = 3
