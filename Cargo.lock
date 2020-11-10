@@ -680,8 +680,10 @@ dependencies = [
  "log",
  "ofdb-boundary",
  "reqwest",
+ "serde",
  "serde_json",
  "structopt",
+ "thiserror",
  "uuid",
 ]
 
