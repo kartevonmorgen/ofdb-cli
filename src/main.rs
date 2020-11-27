@@ -1,12 +1,10 @@
+use crate::import::*;
 use anyhow::Result;
-use ofdb_boundary::{Entry, UpdatePlace};
+use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
 use std::{fs::File, io, path::PathBuf};
 use structopt::StructOpt;
 use uuid::Uuid;
-
-mod import;
-use self::import::*;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ofdb", about = "CLI for OpenFairDB", author)]
@@ -72,5 +70,66 @@ fn update(api: &str, path: PathBuf) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn import(api: &str, path: PathBuf) -> Result<()> {
+    let file = File::open(path)?;
+    let reader = io::BufReader::new(file);
+    let places: Vec<NewPlace> = serde_json::from_reader(reader)?;
+    log::debug!("Read {} places from JSON file", places.len());
+    let client = reqwest::blocking::Client::new();
+    let mut results = vec![];
+    for (i, new_place) in places.iter().enumerate() {
+        let import_id = Some(i.to_string());
+        if let Some(possible_duplicates) = search_duplicates(api, &client, new_place)? {
+            log::warn!(
+                "Found {} possible duplicates for '{}':",
+                possible_duplicates.len(),
+                new_place.title
+            );
+            for p in &possible_duplicates {
+                log::warn!(" - {} (id: {})", p.title, p.id);
+            }
+            results.push(ImportResult {
+                new_place,
+                import_id,
+                result: Err(Error::Duplicates(possible_duplicates)),
+            });
+        } else {
+            match create_new_place(api, &client, new_place) {
+                Ok(id) => {
+                    log::debug!("Successfully imported '{}' with ID={}", new_place.title, id);
+                    results.push(ImportResult {
+                        new_place,
+                        import_id,
+                        result: Ok(id),
+                    });
+                }
+                Err(err) => {
+                    log::warn!("Could not import '{}': {}", new_place.title, err);
+                    results.push(ImportResult {
+                        new_place,
+                        import_id,
+                        result: Err(Error::Other(err.to_string())),
+                    });
+                }
+            }
+        }
+    }
+    let report = Report::from(results);
+    if !report.successes.is_empty() {
+        log::info!("Successfully imported {} places", report.successes.len());
+    }
+    if !report.duplicates.is_empty() {
+        log::warn!(
+            "Found {} places with possible duplicates",
+            report.duplicates.len()
+        );
+    }
+    if !report.failures.is_empty() {
+        log::warn!("{} places contain errors ", report.failures.len());
+    }
+    println!("{}", serde_json::to_string(&report)?);
     Ok(())
 }

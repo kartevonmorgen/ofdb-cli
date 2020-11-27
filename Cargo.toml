@@ -26,11 +26,17 @@ features = ["rustls-tls", "blocking", "json"]
 
 [dev-dependencies]
 csv = "1.1"
+ofdb-core = "*"
+ofdb-entities = "*"
+ofdb-gateways = "*"
 url = "2.2"
 uuid = { version = "0.8", features = [ "serde" ] }
 
 [patch.crates-io]
+ofdb-core     = { git = "https://github.com/kartevonmorgen/openfairdb" }
 ofdb-boundary = { git = "https://github.com/kartevonmorgen/openfairdb" }
+ofdb-entities = { git = "https://github.com/kartevonmorgen/openfairdb" }
+ofdb-gateways = { git = "https://github.com/kartevonmorgen/openfairdb" }
 
 [profile.release]
 lto = true

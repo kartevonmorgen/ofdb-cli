@@ -1,7 +1,9 @@
 use anyhow::Result;
-use ofdb_boundary::{Entry, NewPlace, PlaceSearchResult, UpdatePlace};
+use ofdb_boundary::{Entry, MapBbox, NewPlace, PlaceSearchResult, SearchResponse, UpdatePlace};
 use reqwest::blocking::Client;
 use uuid::Uuid;
+
+pub mod import;
 
 pub fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {
     let url = format!("{}/entries", api);
@@ -29,6 +31,17 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
     let res = client.get(&url).send()?;
     let res = res.json()?;
     Ok(res)
+}
+
+pub fn search(api: &str, client: &Client, txt: &str, bbox: &MapBbox) -> Result<SearchResponse> {
+    let url = format!("{}/search", api);
+    let MapBbox { sw, ne } = bbox;
+    let bbox_string = format!("{},{},{},{}", sw.lat, sw.lng, ne.lat, ne.lng);
+    let res = client
+        .get(&url)
+        .query(&[("text", txt), ("bbox", &bbox_string)])
+        .send()?;
+    Ok(res.json()?)
 }
 
 pub fn search_duplicates(
