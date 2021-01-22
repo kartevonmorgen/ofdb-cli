@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ofdb_boundary::{NewPlace, PlaceSearchResult};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, result};
 use thiserror::Error;
 
@@ -33,28 +33,28 @@ impl ImportResult<'_> {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FailureReport {
     pub new_place: NewPlace,
     pub import_id: Option<String>,
     pub error: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DuplicateReport {
     pub new_place: NewPlace,
     pub import_id: Option<String>,
     pub duplicates: Vec<PlaceSearchResult>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SuccessReport {
     pub new_place: NewPlace,
     pub import_id: Option<String>,
     pub uuid: String,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Report {
     pub duplicates: Vec<DuplicateReport>,
     pub failures: Vec<FailureReport>,
