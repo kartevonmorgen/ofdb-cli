@@ -1,5 +1,7 @@
 use anyhow::Result;
-use ofdb_boundary::{Entry, MapBbox, NewPlace, PlaceSearchResult, SearchResponse, UpdatePlace};
+use ofdb_boundary::{
+    Credentials, Entry, MapBbox, NewPlace, PlaceSearchResult, Review, SearchResponse, UpdatePlace,
+};
 use reqwest::blocking::Client;
 use uuid::Uuid;
 
@@ -31,6 +33,37 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
     let res = client.get(&url).send()?;
     let res = res.json()?;
     Ok(res)
+}
+
+/// Login
+///
+/// Important:
+/// The
+/// [cookie store](https://docs.rs/reqwest/0.11.1/reqwest/struct.ClientBuilder.html#method.cookie_store)
+/// should be enabled.  
+pub fn login(api: &str, client: &Client, req: &Credentials) -> Result<()> {
+    let url = format!("{}/login", api);
+    client
+        .post(&url)
+        .header("Access-Control-Allow-Credentials", "true")
+        .json(&req)
+        .send()?;
+    Ok(())
+}
+
+pub fn review_places(api: &str, client: &Client, uuids: Vec<Uuid>, review: Review) -> Result<()> {
+    let url = format!(
+        "{}/places/{}/review",
+        api,
+        uuids
+            .into_iter()
+            .map(Uuid::to_simple)
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let res = client.post(&url).json(&review).send()?;
+    Ok(res.json()?)
 }
 
 pub fn search(api: &str, client: &Client, txt: &str, bbox: &MapBbox) -> Result<SearchResponse> {
