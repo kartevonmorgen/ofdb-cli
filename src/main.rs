@@ -2,6 +2,7 @@ use crate::import::*;
 use anyhow::Result;
 use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
+use reqwest::blocking::Client;
 use std::{fs::File, io, path::PathBuf};
 use structopt::StructOpt;
 use uuid::Uuid;
@@ -45,7 +46,7 @@ fn main() -> Result<()> {
 }
 
 fn read(api: &str, uuids: Vec<Uuid>) -> Result<()> {
-    let client = reqwest::blocking::Client::new();
+    let client = new_client()?;
     let entries = read_entries(api, &client, uuids)?;
     println!("{}", serde_json::to_string(&entries)?);
     Ok(())
@@ -56,7 +57,7 @@ fn update(api: &str, path: PathBuf) -> Result<()> {
     let reader = io::BufReader::new(file);
     let places: Vec<Entry> = serde_json::from_reader(reader)?;
     log::debug!("Read {} places from JSON file", places.len());
-    let client = reqwest::blocking::Client::new();
+    let client = new_client()?;
     for entry in places {
         let id = entry.id.clone();
         let update = UpdatePlace::from(entry);
@@ -78,7 +79,7 @@ fn import(api: &str, path: PathBuf) -> Result<()> {
     let reader = io::BufReader::new(file);
     let places: Vec<NewPlace> = serde_json::from_reader(reader)?;
     log::debug!("Read {} places from JSON file", places.len());
-    let client = reqwest::blocking::Client::new();
+    let client = new_client()?;
     let mut results = vec![];
     for (i, new_place) in places.iter().enumerate() {
         let import_id = Some(i.to_string());
@@ -132,4 +133,13 @@ fn import(api: &str, path: PathBuf) -> Result<()> {
     }
     println!("{}", serde_json::to_string(&report)?);
     Ok(())
+}
+
+fn new_client() -> Result<Client> {
+    let client = Client::builder()
+        // Disable idle pool:
+        // see https://github.com/hyperium/hyper/issues/2136#issuecomment-861826148
+        .pool_max_idle_per_host(0)
+        .build()?;
+    Ok(client)
 }
