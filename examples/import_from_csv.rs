@@ -11,13 +11,32 @@ use std::env;
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
 struct Record {
-    ID: usize,
-    Titel: String,
-    Beschreibung: String,
-    Hashtags: String,
+    id: usize,
+    created_at: timestamp,
+    created_by: String,
+    version: integer,
+    title: String,
+    description: String,
+    lat: number,
+    lng: number,
+    street: String,
+    zip: integer,
+    city: String,
+    country: String,
+    state: String,
+    homepage: String,
+    contact_name: String,
+    contact_email: String,
+    contact_phone: String,
+    opening_hours: String,
+    founded_on: String,
+    categories: String,
+    tags: String,
     Link: String,
-    Ort: String,
-    Herausgeber: String,
+    license: String,
+    image_url: String,
+    image_link_url: String,
+    avg_rating: number,
 }
 
 pub fn main() -> Result<()> {
@@ -33,7 +52,7 @@ pub fn main() -> Result<()> {
         };
         OpenCage::new(key)
     };
-
+            //can we make this bbox_country to be defined in the csv file, or can we use an 
     let bbox_germany = geo::MapBbox::new(
         geo::MapPoint::new(
             geo::LatCoord::from_deg(47.15),
@@ -73,7 +92,7 @@ pub fn main() -> Result<()> {
         log::info!("Try to find geo location for entry '{}' ({})", title, city);
 
         let mut addr = address::Address::default();
-        addr.country = Some("Deutschland".into());
+        addr.country = Some(country.into());
         addr.city = Some(city.clone());
 
         match geo_coding.resolve_address_lat_lng(&addr) {
