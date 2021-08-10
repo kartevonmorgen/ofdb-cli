@@ -5,6 +5,7 @@ use ofdb_boundary::{
 use reqwest::blocking::Client;
 use uuid::Uuid;
 
+pub mod csv;
 pub mod import;
 
 pub fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {

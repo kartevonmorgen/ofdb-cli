@@ -3,7 +3,7 @@ use anyhow::Result;
 use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
 use reqwest::blocking::Client;
-use std::{fs::File, io, path::PathBuf};
+use std::{env, fs::File, io, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
 use uuid::Uuid;
 
@@ -20,8 +20,17 @@ struct Opt {
 enum SubCommand {
     #[structopt(about = "Import new entries")]
     Import {
-        #[structopt(parse(from_os_str), help = "JSON file")]
+        #[structopt(parse(from_os_str), help = "JSON or CSV file with entries")]
         file: PathBuf,
+        #[structopt(
+            parse(from_os_str),
+            long = "report-file",
+            help = "File with the import report",
+            default_value = "import-report.json"
+        )]
+        report_file: PathBuf,
+        #[structopt(long = "opencage-api-key", help = "OpenCage API key")]
+        opencage_api_key: Option<String>,
     },
     #[structopt(about = "Read entry")]
     Read {
@@ -35,11 +44,35 @@ enum SubCommand {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FileType {
+    Json,
+    Csv,
+}
+
+impl FromStr for FileType {
+    type Err = anyhow::Error;
+    fn from_str(t: &str) -> Result<Self, Self::Err> {
+        match &*t.to_lowercase() {
+            "json" => Ok(Self::Json),
+            "csv" => Ok(Self::Csv),
+            _ => Err(anyhow::anyhow!("Unsupported file type")),
+        }
+    }
+}
+
 fn main() -> Result<()> {
-    env_logger::init();
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info");
+    }
+    pretty_env_logger::init();
     let opt = Opt::from_args();
     match opt.cmd {
-        SubCommand::Import { file } => import(&opt.api, file),
+        SubCommand::Import {
+            file,
+            report_file,
+            opencage_api_key,
+        } => import(&opt.api, file, report_file, opencage_api_key),
         SubCommand::Read { uuids } => read(&opt.api, uuids),
         SubCommand::Update { file } => update(&opt.api, file),
     }
@@ -74,10 +107,28 @@ fn update(api: &str, path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn import(api: &str, path: PathBuf) -> Result<()> {
+fn import(
+    api: &str,
+    path: PathBuf,
+    report_file_path: PathBuf,
+    opencage_api_key: Option<String>,
+) -> Result<()> {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Unsupported file extension"))?;
+    let file_type = ext.parse()?;
+    log::info!(
+        "Import entries from file ({}): {}",
+        format!("{:?}", file_type).to_uppercase(),
+        path.display()
+    );
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
-    let places: Vec<NewPlace> = serde_json::from_reader(reader)?;
+    let places: Vec<NewPlace> = match file_type {
+        FileType::Json => serde_json::from_reader(reader)?,
+        FileType::Csv => csv::from_reader(reader, opencage_api_key)?,
+    };
     log::debug!("Read {} places from JSON file", places.len());
     let client = new_client()?;
     let mut results = vec![];
@@ -131,7 +182,10 @@ fn import(api: &str, path: PathBuf) -> Result<()> {
     if !report.failures.is_empty() {
         log::warn!("{} places contain errors ", report.failures.len());
     }
-    println!("{}", serde_json::to_string(&report)?);
+
+    let file = File::create(report_file_path)?;
+    let writer = io::BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, &report)?;
     Ok(())
 }
 
