@@ -1,3 +1,4 @@
+use crate::import::{CsvImportError, CsvImportResult};
 use anyhow::Result;
 use chrono::prelude::*;
 use csv::ReaderBuilder;
@@ -30,7 +31,10 @@ struct Record {
     image_link_url: Option<String>,
 }
 
-pub fn from_reader<R: Read>(r: R, opencage_api_key: Option<String>) -> Result<Vec<NewPlace>> {
+pub fn from_reader<R: Read>(
+    r: R,
+    opencage_api_key: Option<String>,
+) -> Result<Vec<CsvImportResult>> {
     log::info!("Read entries form CSV");
     let mut rdr = ReaderBuilder::new().from_reader(r);
 
@@ -40,62 +44,84 @@ pub fn from_reader<R: Read>(r: R, opencage_api_key: Option<String>) -> Result<Ve
 
     let geo_coding = OpenCage::new(opencage_api_key);
 
-    let mut new_places = vec![];
+    let mut results = vec![];
 
-    for result in rdr.deserialize() {
-        let r: Record = result?;
-        let Record {
-            title,
-            street,
-            zip,
-            city,
-            country,
-            state,
-            lat,
-            lng,
-            ..
-        } = r;
+    for (record_nr, result) in rdr.deserialize().enumerate() {
+        match result {
+            Err(err) => {
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Err(CsvImportError::InvalidRecord(err.to_string())),
+                });
+            }
+            Ok(r) => {
+                let Record {
+                    title,
+                    street,
+                    zip,
+                    city,
+                    country,
+                    state,
+                    lat,
+                    lng,
+                    ..
+                } = r;
 
-        log::info!(
-            "Check address and geo location for entry '{}' ({:?})",
-            title,
-            city
-        );
-        let addr = Address {
-            street,
-            zip,
-            city,
-            country,
-            state,
-        };
-        let (addr, (lat, lng)) = check_address_and_geo_coordinates(&geo_coding, addr, lat, lng)?;
-
-        let new_place = NewPlace {
-            title,
-            description: r.description,
-            lat,
-            lng,
-            city: addr.city,
-            country: addr.country,
-            state: addr.state,
-            street: addr.street,
-            zip: addr.zip,
-            contact_name: r.contact_name,
-            email: r.contact_email,
-            founded_on: r.founded_on,
-            homepage: r.homepage,
-            categories: vec![],
-            license: r.license,
-            links: vec![],
-            opening_hours: r.opening_hours,
-            tags: r.tags.split(',').map(ToString::to_string).collect(),
-            telephone: r.contact_phone,
-            image_url: r.image_url,
-            image_link_url: r.image_link_url,
-        };
-        new_places.push(new_place);
+                log::info!(
+                    "Check address and geo location for entry '{}' ({:?})",
+                    title,
+                    city
+                );
+                let addr = Address {
+                    street,
+                    zip,
+                    city,
+                    country,
+                    state,
+                };
+                match check_address_and_geo_coordinates(&geo_coding, addr, lat, lng) {
+                    Ok((addr, (lat, lng))) => {
+                        let new_place = NewPlace {
+                            title,
+                            description: r.description,
+                            lat,
+                            lng,
+                            city: addr.city,
+                            country: addr.country,
+                            state: addr.state,
+                            street: addr.street,
+                            zip: addr.zip,
+                            contact_name: r.contact_name,
+                            email: r.contact_email,
+                            founded_on: r.founded_on,
+                            homepage: r.homepage,
+                            categories: vec![],
+                            license: r.license,
+                            links: vec![],
+                            opening_hours: r.opening_hours,
+                            tags: r.tags.split(',').map(ToString::to_string).collect(),
+                            telephone: r.contact_phone,
+                            image_url: r.image_url,
+                            image_link_url: r.image_link_url,
+                        };
+                        results.push(CsvImportResult {
+                            record_nr,
+                            result: Ok(new_place),
+                        });
+                    }
+                    Err(err) => {
+                        results.push(CsvImportResult {
+                            record_nr,
+                            result: Err(CsvImportError::InvalidAddressOrGeoCoordinates(
+                                err.to_string(),
+                            )),
+                        });
+                    }
+                }
+            }
+        }
     }
-    Ok(new_places)
+    Ok(results)
 }
 
 fn check_address_and_geo_coordinates(

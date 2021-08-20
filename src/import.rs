@@ -12,6 +12,14 @@ pub enum Error {
     Other(String),
 }
 
+#[derive(Debug, Error)]
+pub enum CsvImportError {
+    #[error("Could not read CSV record: {0}")]
+    InvalidRecord(String),
+    #[error("Invalid address or geo coordinates: {0}")]
+    InvalidAddressOrGeoCoordinates(String),
+}
+
 type PlaceId = String;
 
 #[derive(Debug)]
@@ -19,6 +27,12 @@ pub struct ImportResult<'a> {
     pub new_place: &'a NewPlace,
     pub import_id: Option<String>,
     pub result: result::Result<PlaceId, Error>,
+}
+
+#[derive(Debug)]
+pub struct CsvImportResult {
+    pub record_nr: usize,
+    pub result: result::Result<NewPlace, CsvImportError>,
 }
 
 impl ImportResult<'_> {
@@ -54,11 +68,25 @@ pub struct SuccessReport {
     pub uuid: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CsvImportSuccessReport {
+    pub record_nr: usize,
+    pub new_place: NewPlace,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CsvImportFailureReport {
+    pub record_nr: usize,
+    pub error: String,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Report {
     pub duplicates: Vec<DuplicateReport>,
     pub failures: Vec<FailureReport>,
     pub successes: Vec<SuccessReport>,
+    pub csv_import_successes: Vec<CsvImportSuccessReport>,
+    pub csv_import_failures: Vec<CsvImportFailureReport>,
 }
 
 impl TryFrom<&ImportResult<'_>> for FailureReport {
@@ -108,6 +136,35 @@ impl TryFrom<&ImportResult<'_>> for SuccessReport {
     }
 }
 
+impl TryFrom<&CsvImportResult> for CsvImportSuccessReport {
+    type Error = ();
+    fn try_from(res: &CsvImportResult) -> Result<Self, Self::Error> {
+        let CsvImportResult { record_nr, result } = res;
+        result
+            .as_ref()
+            .map(|new_place| CsvImportSuccessReport {
+                record_nr: *record_nr,
+                new_place: new_place.clone(),
+            })
+            .map_err(|_| ())
+    }
+}
+
+impl TryFrom<&CsvImportResult> for CsvImportFailureReport {
+    type Error = ();
+    fn try_from(res: &CsvImportResult) -> Result<Self, Self::Error> {
+        let CsvImportResult { record_nr, result } = res;
+        result
+            .as_ref()
+            .err()
+            .map(|err| CsvImportFailureReport {
+                record_nr: *record_nr,
+                error: err.to_string(),
+            })
+            .ok_or(())
+    }
+}
+
 impl From<Vec<ImportResult<'_>>> for Report {
     fn from(results: Vec<ImportResult>) -> Self {
         let failures = results
@@ -132,6 +189,29 @@ impl From<Vec<ImportResult<'_>>> for Report {
             duplicates,
             failures,
             successes,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<Vec<CsvImportResult>> for Report {
+    fn from(results: Vec<CsvImportResult>) -> Self {
+        let csv_import_failures = results
+            .iter()
+            .map(CsvImportFailureReport::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        let csv_import_successes = results
+            .iter()
+            .map(CsvImportSuccessReport::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Self {
+            csv_import_failures,
+            csv_import_successes,
+            ..Default::default()
         }
     }
 }

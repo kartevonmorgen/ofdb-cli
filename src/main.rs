@@ -3,7 +3,13 @@ use anyhow::Result;
 use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
 use reqwest::blocking::Client;
-use std::{env, fs::File, io, path::PathBuf, str::FromStr};
+use std::{
+    env,
+    fs::File,
+    io,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use structopt::StructOpt;
 use uuid::Uuid;
 
@@ -125,11 +131,30 @@ fn import(
     );
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
-    let places: Vec<NewPlace> = match file_type {
-        FileType::Json => serde_json::from_reader(reader)?,
-        FileType::Csv => csv::from_reader(reader, opencage_api_key)?,
+    let places = match file_type {
+        FileType::Json => {
+            let places: Vec<NewPlace> = serde_json::from_reader(reader)?;
+            log::debug!("Import {} places from JSON file", places.len());
+            places
+        }
+        FileType::Csv => {
+            let csv_results = csv::from_reader(reader, opencage_api_key)?;
+            if csv_results.iter().any(|r| r.result.is_err()) {
+                let report = Report::from(csv_results);
+                log::warn!(
+                    "{} csv records contain errors ",
+                    report.csv_import_failures.len()
+                );
+                write_import_report(report, report_file_path)?;
+                return Ok(());
+            } else {
+                let places: Vec<NewPlace> =
+                    csv_results.into_iter().map(|r| r.result.unwrap()).collect();
+                log::debug!("Import {} places from CSV file", places.len());
+                places
+            }
+        }
     };
-    log::debug!("Read {} places from JSON file", places.len());
     let client = new_client()?;
     let mut results = vec![];
     for (i, new_place) in places.iter().enumerate() {
@@ -182,8 +207,12 @@ fn import(
     if !report.failures.is_empty() {
         log::warn!("{} places contain errors ", report.failures.len());
     }
+    write_import_report(report, report_file_path)?;
+    Ok(())
+}
 
-    let file = File::create(report_file_path)?;
+fn write_import_report<P: AsRef<Path>>(report: Report, path: P) -> Result<()> {
+    let file = File::create(path)?;
     let writer = io::BufWriter::new(file);
     serde_json::to_writer_pretty(writer, &report)?;
     Ok(())
