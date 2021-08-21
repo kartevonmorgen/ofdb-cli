@@ -28,7 +28,7 @@ title,description,lat,lng,street,zip,city,country,state,contact_name,contact_ema
 Don't give an ID, created_by, date or Version-Number. But dont forget the Licens. You are welcome to use this template: https://blog.vonmorgen.org/import-template
 
 2. Change directory to the folder, where your Import.csv is located (with the command "CD Path-to-folder")
-3. Then execute the following command (if your import-csv is called "entries.csv":
+3. Then execute the following command (if your import-file is called "import.csv"):
 ```sh
 ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb8a96c2c7fe662dc96 --report-file import-report.json import.csv
 ```
