@@ -51,3 +51,17 @@ If the duplicate-checking still returns errors, although you have checkt them an
 ### 4. Archive / reject existing entries
 
 ....
+
+## Updating the Script
+
+regularly you should update the script, as we alway introduce new features
+
+```
+
+```
+### Update Rust-Compiler
+Just type in commandline: 
+```
+rustup update
+```
+
