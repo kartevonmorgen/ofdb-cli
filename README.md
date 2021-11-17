@@ -29,10 +29,15 @@ Don't give an ID, created_by, date or Version-Number. But dont forget the Licens
 
 2. Change directory to the folder, where your Import.csv is located (with the command "CD Path-to-folder")
 3. Then execute the following command (if your import-file is called "import.csv"):
+
+ ofdb import <file> --opencage-api-key <opencage-api-key> --report-file <report-file>
 ```sh
-ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb8a96c2c7fe662dc96 --report-file import-report.json import.csv
+ofdb import --api-url https://dev.ofdb.io/v0/ --opencage-api-key 2049603a30ec4cb8a96c2c7fe662dc96 --report-file import-report.json "import.csv"
 ```
-NOTE: replace the OpenCage API key with a valid one.
+
+NOTE: 
+  - replace the OpenCage API key with a valid one.
+  - All Entries need to have eather 'non-profit'  or 'commercial' as tags.
 
 #### Opencage API-Key
 To make the geocoding work, you need an API-Key from https://opencagedata.com/
@@ -56,8 +61,8 @@ If the duplicate-checking still returns errors, although you have checkt them an
 
 regularly you should update the script, as we alway introduce new features
 
-```
-
+```sh
+cargo install --force --git https://github.com/kartevonmorgen/ofdb-cli
 ```
 ### Update Rust-Compiler
 Just type in commandline: 
