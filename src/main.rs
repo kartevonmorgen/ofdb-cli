@@ -1,5 +1,6 @@
 use crate::import::*;
 use anyhow::Result;
+use clap::{Args, Parser, Subcommand};
 use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
 use reqwest::blocking::Client;
@@ -10,42 +11,47 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-use structopt::StructOpt;
 use uuid::Uuid;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "ofdb", about = "CLI for OpenFairDB", author)]
-struct Opt {
-    #[structopt(long = "api-url", help = "The URL of the JSON API")]
-    api: String,
-    #[structopt(subcommand)]
+#[derive(Parser)]
+#[clap(name = "ofdb", about = "CLI for OpenFairDB", author)]
+struct Cli {
+    #[clap(flatten)]
+    opt: Opt,
+    #[clap(subcommand)]
     cmd: SubCommand,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Args)]
+struct Opt {
+    #[clap(long = "api-url", help = "The URL of the JSON API")]
+    api: String,
+}
+
+#[derive(Subcommand)]
 enum SubCommand {
-    #[structopt(about = "Import new entries")]
+    #[clap(about = "Import new entries")]
     Import {
-        #[structopt(parse(from_os_str), help = "JSON or CSV file with entries")]
+        #[clap(parse(from_os_str), help = "JSON or CSV file with entries")]
         file: PathBuf,
-        #[structopt(
+        #[clap(
             parse(from_os_str),
             long = "report-file",
             help = "File with the import report",
             default_value = "import-report.json"
         )]
         report_file: PathBuf,
-        #[structopt(long = "opencage-api-key", help = "OpenCage API key")]
+        #[clap(long = "opencage-api-key", help = "OpenCage API key")]
         opencage_api_key: Option<String>,
     },
-    #[structopt(about = "Read entry")]
+    #[clap(about = "Read entry")]
     Read {
-        #[structopt(required = true, min_values = 1, help = "UUID")]
+        #[clap(required = true, min_values = 1, help = "UUID")]
         uuids: Vec<Uuid>,
     },
-    #[structopt(about = "Update entries")]
+    #[clap(about = "Update entries")]
     Update {
-        #[structopt(parse(from_os_str), help = "JSON file")]
+        #[clap(parse(from_os_str), help = "JSON file")]
         file: PathBuf,
     },
 }
@@ -72,15 +78,15 @@ fn main() -> Result<()> {
         env::set_var("RUST_LOG", "info");
     }
     pretty_env_logger::init();
-    let opt = Opt::from_args();
-    match opt.cmd {
+    let args = Cli::parse();
+    match args.cmd {
         SubCommand::Import {
             file,
             report_file,
             opencage_api_key,
-        } => import(&opt.api, file, report_file, opencage_api_key),
-        SubCommand::Read { uuids } => read(&opt.api, uuids),
-        SubCommand::Update { file } => update(&opt.api, file),
+        } => import(&args.opt.api, file, report_file, opencage_api_key),
+        SubCommand::Read { uuids } => read(&args.opt.api, uuids),
+        SubCommand::Update { file } => update(&args.opt.api, file),
     }
 }
 

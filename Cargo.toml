@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 chrono = "*"
+clap = { version = "3", features = ["derive"] }
 csv = "1"
 pretty_env_logger = "*"
 log = "0.4"
@@ -21,7 +22,6 @@ ofdb-gateways = "*"
 uuid = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-structopt = "0.3"
 thiserror = "1"
 
 [dependencies.reqwest]
