@@ -941,6 +941,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "csv",
+ "env_logger",
  "log",
  "ofdb-boundary",
  "ofdb-core",

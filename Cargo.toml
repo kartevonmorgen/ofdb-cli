@@ -30,6 +30,7 @@ default-features = false
 features = ["rustls-tls", "blocking", "json", "cookies"]
 
 [dev-dependencies]
+env_logger = "*"
 ofdb-entities = "*"
 url = { version = "2.2", features = [ "serde" ] }
 uuid = { version = "0.8", features = [ "serde" ] }
