@@ -2,7 +2,7 @@
 name = "ofdb-cli"
 version = "0.0.0"
 authors = ["slowtec GmbH <post@slowtec.de>"]
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "ofdb"
