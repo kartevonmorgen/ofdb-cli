@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 pub mod csv;
 pub mod import;
+pub mod review;
 
 pub fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {
     let url = format!("{}/entries", api);
@@ -44,6 +45,7 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
 /// should be enabled.  
 pub fn login(api: &str, client: &Client, req: &Credentials) -> Result<()> {
     let url = format!("{}/login", api);
+    log::info!("Try to login with '{}' ", req.email);
     client
         .post(&url)
         .header("Access-Control-Allow-Credentials", "true")

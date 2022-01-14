@@ -2,14 +2,15 @@ use crate::import::{CsvImportError, CsvImportResult};
 use anyhow::Result;
 use chrono::prelude::*;
 use csv::ReaderBuilder;
-use ofdb_boundary::{Address, NewPlace};
+use ofdb_boundary::{Address, NewPlace, Review, ReviewStatus};
 use ofdb_core::gateways::geocode::GeoCodingGateway;
 use ofdb_gateways::opencage::*;
 use serde::Deserialize;
 use std::io::Read;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
-struct Record {
+struct NewPlaceRecord {
     title: String,
     description: String,
     lat: Option<f64>,
@@ -31,7 +32,7 @@ struct Record {
     image_link_url: Option<String>,
 }
 
-pub fn from_reader<R: Read>(
+pub fn new_places_from_reader<R: Read>(
     r: R,
     opencage_api_key: Option<String>,
 ) -> Result<Vec<CsvImportResult>> {
@@ -55,7 +56,7 @@ pub fn from_reader<R: Read>(
                 });
             }
             Ok(r) => {
-                let Record {
+                let NewPlaceRecord {
                     title,
                     street,
                     zip,
@@ -152,5 +153,65 @@ fn check_address_and_geo_coordinates(
         (true, None) => Err(anyhow::anyhow!(
             "An address or geo coordinates (lat/lng) are required"
         )),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ReviewRecord {
+    id: String,
+    status: String,
+    comment: Option<String>,
+}
+
+pub fn reviews_from_reader<R: Read>(r: R) -> Result<Vec<(Uuid, Review)>> {
+    log::info!("Read reviews form CSV");
+    let mut rdr = ReaderBuilder::new().from_reader(r);
+    let mut results = vec![];
+
+    for (record_nr, result) in rdr.deserialize().enumerate() {
+        match result {
+            Err(err) => {
+                log::warn!("Unable to read record nr {record_nr}): {}", err);
+                continue;
+            }
+            Ok(r) => {
+                let ReviewRecord {
+                    id,
+                    status,
+                    comment,
+                } = r;
+                if let Ok(id) = id.parse::<Uuid>() {
+                    let status = match &*status.trim().to_lowercase() {
+                        "archived" => ReviewStatus::Archived,
+                        "confirmed" => ReviewStatus::Confirmed,
+                        "created" => ReviewStatus::Created,
+                        "rejected" => ReviewStatus::Rejected,
+                        _ => {
+                            log::warn!("Invalid status '{status}' in record {record_nr}");
+                            continue;
+                        }
+                    };
+                    let review = Review { status, comment };
+                    results.push((id, review));
+                } else {
+                    log::warn!("Invalid ID '{}' in record {record_nr})", id);
+                    continue;
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+
+    #[test]
+    fn read_reviews_from_csv_file() {
+        let file = File::open("tests/review-example.csv").unwrap();
+        let reviews = reviews_from_reader(file).unwrap();
+        assert_eq!(reviews.len(), 2);
     }
 }

@@ -1,7 +1,8 @@
 use crate::import::*;
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
-use ofdb_boundary::{Entry, NewPlace, UpdatePlace};
+use email_address_parser::EmailAddress;
+use ofdb_boundary::{Credentials, Entry, NewPlace, UpdatePlace};
 use ofdb_cli::*;
 use reqwest::blocking::Client;
 use std::{
@@ -54,6 +55,15 @@ enum SubCommand {
         #[clap(parse(from_os_str), help = "JSON file")]
         file: PathBuf,
     },
+    #[clap(about = "Review entries")]
+    Review {
+        #[clap(long = "email", required = true, help = "E-Mail address")]
+        email: String,
+        #[clap(long = "password", required = true, help = "Password")]
+        password: String,
+        #[clap(parse(from_os_str), required = true, help = "CSV file")]
+        file: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -79,14 +89,21 @@ fn main() -> Result<()> {
     }
     pretty_env_logger::init();
     let args = Cli::parse();
+
+    use SubCommand as C;
     match args.cmd {
-        SubCommand::Import {
+        C::Import {
             file,
             report_file,
             opencage_api_key,
         } => import(&args.opt.api, file, report_file, opencage_api_key),
-        SubCommand::Read { uuids } => read(&args.opt.api, uuids),
-        SubCommand::Update { file } => update(&args.opt.api, file),
+        C::Read { uuids } => read(&args.opt.api, uuids),
+        C::Update { file } => update(&args.opt.api, file),
+        C::Review {
+            email,
+            password,
+            file,
+        } => review(&args.opt.api, email, password, file),
     }
 }
 
@@ -144,7 +161,7 @@ fn import(
             places
         }
         FileType::Csv => {
-            let csv_results = csv::from_reader(reader, opencage_api_key)?;
+            let csv_results = csv::new_places_from_reader(reader, opencage_api_key)?;
             if csv_results.iter().any(|r| r.result.is_err()) {
                 let report = Report::from(csv_results);
                 log::warn!(
@@ -214,6 +231,27 @@ fn import(
         log::warn!("{} places contain errors ", report.failures.len());
     }
     write_import_report(report, report_file_path)?;
+    Ok(())
+}
+
+fn review(api: &str, email: String, password: String, path: PathBuf) -> Result<()> {
+    let _ = EmailAddress::parse(&email, None)
+        .ok_or(anyhow::anyhow!("Invalid email address '{email}'"))?;
+    log::info!("Reas reviews from file: {}", path.display());
+    let file = File::open(path)?;
+    let reader = io::BufReader::new(file);
+    let reviews = csv::reviews_from_reader(reader)?;
+    log::info!("{} reviews where found in CSV file", reviews.len());
+    let client = new_client()?;
+    login(api, &client, &Credentials { email, password })
+        .map_err(|err| anyhow::anyhow!("Unable to login: {err}"))?;
+    let review_groups = review::group_reviews(reviews);
+    for (rev, uuids) in review_groups {
+        log::info!("Review the following place IDs: {uuids:#?}");
+        if let Err(err) = review_places(api, &client, uuids.into_iter().collect(), rev) {
+            log::warn!("Unable to review: {err}");
+        }
+    }
     Ok(())
 }
 
