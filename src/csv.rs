@@ -214,4 +214,14 @@ mod tests {
         let reviews = reviews_from_reader(file).unwrap();
         assert_eq!(reviews.len(), 2);
     }
+
+    #[test]
+    fn read_places_from_csv_file() {
+        let file = File::open("tests/import-example.csv").unwrap();
+        let import = new_places_from_reader(file, None).unwrap();
+        assert_eq!(import.len(), 1);
+        let new_place = import[0].result.as_ref().unwrap();
+        assert_eq!(new_place.title, "GLS Bank");
+        assert_eq!(new_place.tags, vec!["bank", "geld", "commercial"]);
+    }
 }
