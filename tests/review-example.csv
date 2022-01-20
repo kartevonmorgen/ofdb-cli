@@ -1,4 +1,4 @@
 "id","status","comment"
 "58ffce75-c2a9-4a3a-832b-7e1c56c0e729","archived","This is outdated"
 "3ff04e68-d4be-4ec8-bcc8-6ab51fd71c0d","rejected","This is spam"
-"58ffce75-c2a9-4a3a-832b-7e1c56c0e729","confirm","This is an valid entry and should not be deleted"
+"58ffce75-c2a9-4a3a-832b-7e1c56c0e729","confirmed","This is an valid entry and should not be deleted"
