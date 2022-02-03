@@ -3,7 +3,10 @@
 ## Installation
 
 1. Make sure [Rust](https://rust-lang.org) is installed on your system.
-2. Open a terminal and run the following command
+    ``` 
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh 
+    ```
+3. Open a terminal and run the following command
    ```sh
    cargo install --locked --git https://github.com/kartevonmorgen/ofdb-cli
    ```
