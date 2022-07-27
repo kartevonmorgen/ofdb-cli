@@ -212,7 +212,7 @@ mod tests {
     fn read_reviews_from_csv_file() {
         let file = File::open("tests/review-example.csv").unwrap();
         let reviews = reviews_from_reader(file).unwrap();
-        assert_eq!(reviews.len(), 2);
+        assert_eq!(reviews.len(), 3);
     }
 
     #[test]
