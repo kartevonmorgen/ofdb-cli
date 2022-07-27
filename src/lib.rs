@@ -65,6 +65,8 @@ pub fn review_places(api: &str, client: &Client, uuids: Vec<Uuid>, review: Revie
             .collect::<Vec<_>>()
             .join(",")
     );
+    let json_string = serde_json::to_string(&review).unwrap();
+    log::debug!("Send review {json_string} to {url}");
     let res = client.post(&url).json(&review).send()?;
     Ok(res.json()?)
 }
