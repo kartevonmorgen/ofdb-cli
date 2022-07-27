@@ -237,7 +237,7 @@ fn import(
 fn review(api: &str, email: String, password: String, path: PathBuf) -> Result<()> {
     let _ = EmailAddress::parse(&email, None)
         .ok_or(anyhow::anyhow!("Invalid email address '{email}'"))?;
-    log::info!("Reas reviews from file: {}", path.display());
+    log::info!("Read reviews from file: {}", path.display());
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
     let reviews = csv::reviews_from_reader(reader)?;
