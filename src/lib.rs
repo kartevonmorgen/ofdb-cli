@@ -1,8 +1,9 @@
 use anyhow::Result;
 use ofdb_boundary::{
-    Credentials, Entry, MapBbox, NewPlace, PlaceSearchResult, Review, SearchResponse, UpdatePlace,
+    Credentials, Entry, Error, MapBbox, NewPlace, PlaceSearchResult, Review, SearchResponse,
+    UpdatePlace,
 };
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, Response};
 use uuid::Uuid;
 
 pub mod csv;
@@ -12,7 +13,7 @@ pub mod review;
 pub fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {
     let url = format!("{}/entries", api);
     let res = client.post(&url).json(&new_place).send()?;
-    Ok(res.json()?)
+    handle_response(res)
 }
 
 pub fn update_place(api: &str, client: &Client, id: &str, place: &UpdatePlace) -> Result<String> {
@@ -20,7 +21,7 @@ pub fn update_place(api: &str, client: &Client, id: &str, place: &UpdatePlace) -
     place.version += 1;
     let url = format!("{}/entries/{}", api, id);
     let res = client.put(&url).json(&place).send()?;
-    Ok(res.json()?)
+    handle_response(res)
 }
 
 pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<Entry>> {
@@ -33,8 +34,7 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
         .join(",");
     let url = format!("{}/entries/{}", api, uuids);
     let res = client.get(&url).send()?;
-    let res = res.json()?;
-    Ok(res)
+    handle_response(res)
 }
 
 /// Login
@@ -46,12 +46,12 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
 pub fn login(api: &str, client: &Client, req: &Credentials) -> Result<()> {
     let url = format!("{}/login", api);
     log::info!("Try to login with '{}' ", req.email);
-    client
+    let res = client
         .post(&url)
         .header("Access-Control-Allow-Credentials", "true")
         .json(&req)
         .send()?;
-    Ok(())
+    handle_response(res)
 }
 
 pub fn review_places(api: &str, client: &Client, uuids: Vec<Uuid>, review: Review) -> Result<()> {
@@ -68,7 +68,7 @@ pub fn review_places(api: &str, client: &Client, uuids: Vec<Uuid>, review: Revie
     let json_string = serde_json::to_string(&review).unwrap();
     log::debug!("Send review {json_string} to {url}");
     let res = client.post(&url).json(&review).send()?;
-    Ok(res.json()?)
+    handle_response(res)
 }
 
 pub fn search(api: &str, client: &Client, txt: &str, bbox: &MapBbox) -> Result<SearchResponse> {
@@ -79,7 +79,7 @@ pub fn search(api: &str, client: &Client, txt: &str, bbox: &MapBbox) -> Result<S
         .get(&url)
         .query(&[("text", txt), ("bbox", &bbox_string)])
         .send()?;
-    Ok(res.json()?)
+    handle_response(res)
 }
 
 pub fn search_duplicates(
@@ -89,6 +89,18 @@ pub fn search_duplicates(
 ) -> Result<Option<Vec<PlaceSearchResult>>> {
     let url = format!("{}/search/duplicates", api);
     let res = client.post(&url).json(&new_place).send()?;
-    let res: Vec<PlaceSearchResult> = res.json()?;
+    let res: Vec<PlaceSearchResult> = handle_response(res)?;
     Ok(if res.is_empty() { None } else { Some(res) })
+}
+
+fn handle_response<T>(res: Response) -> Result<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    if res.status().is_success() {
+        Ok(res.json::<T>()?)
+    } else {
+        let err: Error = res.json()?;
+        Err(anyhow::anyhow!(err.message))
+    }
 }
