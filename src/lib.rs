@@ -28,7 +28,7 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
     log::debug!("Read {} places", uuids.len());
     let uuids = uuids
         .into_iter()
-        .map(Uuid::to_simple)
+        .map(Uuid::simple)
         .map(|s| s.to_string())
         .collect::<Vec<_>>()
         .join(",");
@@ -60,7 +60,7 @@ pub fn review_places(api: &str, client: &Client, uuids: Vec<Uuid>, review: Revie
         api,
         uuids
             .into_iter()
-            .map(Uuid::to_simple)
+            .map(Uuid::simple)
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .join(",")

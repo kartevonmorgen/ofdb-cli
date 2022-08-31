@@ -10,7 +10,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-chrono = "*"
 clap = { version = "3", features = ["derive"] }
 csv = "1"
 email-address-parser = "*"
@@ -18,13 +17,14 @@ log = "0.4"
 pretty_env_logger = "*"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+time = "0.3"
 thiserror = "1"
-uuid = "0.8"
+uuid = "1.1"
 
 # Open FairDB dependencies
-ofdb-boundary = { version = "0.10", features = [ "extra-derive" ] }
+ofdb-boundary = { version = "0.11", features = [ "extra-derive" ] }
 ofdb-core = "*"
-ofdb-entities = { version = "0.10", features = [ "rusturl" ] }
+ofdb-entities = { version = "0.11", features = [ "url" ] }
 ofdb-gateways = "*"
 
 [dependencies.reqwest]
@@ -36,13 +36,13 @@ features = ["rustls-tls", "blocking", "json", "cookies"]
 env_logger = "*"
 ofdb-entities = "*"
 url = { version = "2.2", features = [ "serde" ] }
-uuid = { version = "0.8", features = [ "serde" ] }
+uuid = { version = "1.1", features = [ "serde" ] }
 
 [patch.crates-io]
-ofdb-core     = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.10.5" }
-ofdb-boundary = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.10.5" }
-ofdb-entities = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.10.5" }
-ofdb-gateways = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.10.5" }
+ofdb-core     = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.11.0" }
+ofdb-boundary = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.11.0" }
+ofdb-entities = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.11.0" }
+ofdb-gateways = { git = "https://github.com/kartevonmorgen/openfairdb", rev = "v0.11.0" }
 
 [profile.release]
 lto = true

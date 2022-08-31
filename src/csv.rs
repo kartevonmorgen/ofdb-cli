@@ -1,6 +1,6 @@
 use crate::import::{CsvImportError, CsvImportResult};
 use anyhow::Result;
-use chrono::prelude::*;
+use time::Date;
 use csv::ReaderBuilder;
 use ofdb_boundary::{Address, NewPlace, Review, ReviewStatus};
 use ofdb_core::gateways::geocode::GeoCodingGateway;
@@ -24,7 +24,7 @@ struct NewPlaceRecord {
     contact_email: Option<String>,
     contact_phone: Option<String>,
     opening_hours: Option<String>,
-    founded_on: Option<NaiveDate>,
+    founded_on: Option<Date>,
     tags: String,
     homepage: Option<String>,
     license: String,
