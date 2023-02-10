@@ -30,6 +30,14 @@ Make sure the CSV file has all required fields (an example can be found in [`tes
 ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb8a96c2c7fe662dc96 --report-file import-report.json "entries.csv"
 ```
 
+NOTE: replace the OpenCage API key with a valid one.
+
+#### Opencage API-Key
+
+- To make the geocoding work, you need an API-Key from https://opencagedata.com/
+- Please sign-up there https://opencagedata.com/users/sign_up (SSO with Github)
+  and then you find directly your API-Keys: https://opencagedata.com/dashboard#api-keys
+
 ### CSV Review
 
 Make sure the CSV file has all required fields (an example can be found in [`tests/review-example.csv`](https://github.com/kartevonmorgen/ofdb-cli/blob/master/tests/review-example.csv)).
@@ -38,10 +46,4 @@ Make sure the CSV file has all required fields (an example can be found in [`tes
 ofdb --api-url https://dev.ofdb.io/v0/ review --email <EMAIL> --password <PASSWORD> "review.csv"
 ```
 
-NOTE: replace the OpenCage API key with a valid one.
 
-#### Opencage API-Key
-
-- To make the geocoding work, you need an API-Key from https://opencagedata.com/
-- Please sign-up there https://opencagedata.com/users/sign_up (SSO with Github)
-  and then you find directly your API-Keys: https://opencagedata.com/dashboard#api-keys
