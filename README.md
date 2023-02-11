@@ -43,7 +43,7 @@ NOTE: replace the OpenCage API key with a valid one.
 Make sure the CSV file has all required fields (an example can be found in [`tests/review-example.csv`](https://github.com/kartevonmorgen/ofdb-cli/blob/master/tests/review-example.csv)).
 
 ```sh
-ofdb --api-url https://dev.ofdb.io/v0/ review --email <EMAIL> --password <PASSWORD> "review.csv"
+ofdb --api-url https://dev.ofdb.io/v0/ review --email EMAIL@host.de --password PASSWORD123 "review.csv"
 ```
-
+You need to have moderation rights. Register here: https://openfairdb.org/register and request to become Scout/Pilot via info@kartevonmorgen.org
 
