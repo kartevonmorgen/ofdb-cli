@@ -3,8 +3,8 @@
 ## Installation
 
 1. Make sure [Rust](https://rust-lang.org) is installed on your system.
-    ``` 
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh 
+    ```
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     ```
 3. Open a terminal and run the following command
    ```sh
@@ -31,6 +31,18 @@ ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb
 ```
 
 NOTE: replace the OpenCage API key with a valid one.
+
+### Update Entries
+
+```sh
+ofdb --api-url https://dev.ofdb.io/v0/ update updates.json
+```
+The file to update must be an array of entries:
+```json
+[
+  { "id": "...", "title": ".." }
+]
+```
 
 #### Opencage API-Key
 
