@@ -12,7 +12,7 @@ pub mod review;
 
 pub fn create_new_place(api: &str, client: &Client, new_place: &NewPlace) -> Result<String> {
     let url = format!("{}/entries", api);
-    let res = client.post(&url).json(&new_place).send()?;
+    let res = client.post(url).json(&new_place).send()?;
     handle_response(res)
 }
 
@@ -20,7 +20,7 @@ pub fn update_place(api: &str, client: &Client, id: &str, place: &UpdatePlace) -
     let mut place = place.clone();
     place.version += 1;
     let url = format!("{}/entries/{}", api, id);
-    let res = client.put(&url).json(&place).send()?;
+    let res = client.put(url).json(&place).send()?;
     handle_response(res)
 }
 
@@ -33,7 +33,7 @@ pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<
         .collect::<Vec<_>>()
         .join(",");
     let url = format!("{}/entries/{}", api, uuids);
-    let res = client.get(&url).send()?;
+    let res = client.get(url).send()?;
     handle_response(res)
 }
 
@@ -47,7 +47,7 @@ pub fn login(api: &str, client: &Client, req: &Credentials) -> Result<()> {
     let url = format!("{}/login", api);
     log::info!("Try to login with '{}' ", req.email);
     let res = client
-        .post(&url)
+        .post(url)
         .header("Access-Control-Allow-Credentials", "true")
         .json(&req)
         .send()?;
@@ -76,7 +76,7 @@ pub fn search(api: &str, client: &Client, txt: &str, bbox: &MapBbox) -> Result<S
     let MapBbox { sw, ne } = bbox;
     let bbox_string = format!("{},{},{},{}", sw.lat, sw.lng, ne.lat, ne.lng);
     let res = client
-        .get(&url)
+        .get(url)
         .query(&[("text", txt), ("bbox", &bbox_string)])
         .send()?;
     handle_response(res)
@@ -88,7 +88,7 @@ pub fn search_duplicates(
     new_place: &NewPlace,
 ) -> Result<Option<Vec<PlaceSearchResult>>> {
     let url = format!("{}/search/duplicates", api);
-    let res = client.post(&url).json(&new_place).send()?;
+    let res = client.post(url).json(&new_place).send()?;
     let res: Vec<PlaceSearchResult> = handle_response(res)?;
     Ok(if res.is_empty() { None } else { Some(res) })
 }
