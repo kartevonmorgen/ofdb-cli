@@ -142,13 +142,14 @@ fn check_address_and_geo_coordinates(
                 None => Err(anyhow::anyhow!("Unable to find geo coordinates")),
             }
         }
-        (true, Some(_)) => {
+        (true, Some(coordinates)) => {
+            log::warn!("Found entry without address");
             // TODO: look up address
-            Err(anyhow::anyhow!("Entries without address can't be imported"))
+            Ok((addr, coordinates))
         }
-        (false, Some((lat, lng))) => {
+        (false, Some(coordinates)) => {
             // nothing to to
-            Ok((addr, (lat, lng)))
+            Ok((addr, coordinates))
         }
         (true, None) => Err(anyhow::anyhow!(
             "An address or geo coordinates (lat/lng) are required"
