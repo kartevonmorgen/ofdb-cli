@@ -44,6 +44,12 @@ enum SubCommand {
         report_file: PathBuf,
         #[clap(long = "opencage-api-key", help = "OpenCage API key")]
         opencage_api_key: Option<String>,
+
+        #[clap(
+            long = "ignore-duplicates",
+            help = "create a new entry, even if it becomes a duplicate"
+        )]
+        ignore_duplicates: bool,
     },
     #[clap(about = "Read entry")]
     Read {
@@ -96,7 +102,14 @@ fn main() -> Result<()> {
             file,
             report_file,
             opencage_api_key,
-        } => import(&args.opt.api, file, report_file, opencage_api_key),
+            ignore_duplicates,
+        } => import(
+            &args.opt.api,
+            file,
+            report_file,
+            opencage_api_key,
+            ignore_duplicates,
+        ),
         C::Read { uuids } => read(&args.opt.api, uuids),
         C::Update { file } => update(&args.opt.api, file),
         C::Review {
@@ -141,6 +154,7 @@ fn import(
     path: PathBuf,
     report_file_path: PathBuf,
     opencage_api_key: Option<String>,
+    ignore_duplicates: bool,
 ) -> Result<()> {
     let ext = path
         .extension()
@@ -152,6 +166,9 @@ fn import(
         format!("{:?}", file_type).to_uppercase(),
         path.display()
     );
+    if ignore_duplicates {
+        log::warn!("Ignore duplicates: create a new entry, even if it becomes a duplicate");
+    }
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
     let places = match file_type {
@@ -182,7 +199,14 @@ fn import(
     let mut results = vec![];
     for (i, new_place) in places.iter().enumerate() {
         let import_id = Some(i.to_string());
-        if let Some(possible_duplicates) = search_duplicates(api, &client, new_place)? {
+
+        let possible_duplicates = if ignore_duplicates {
+            None
+        } else {
+            search_duplicates(api, &client, new_place)?
+        };
+
+        if let Some(possible_duplicates) = possible_duplicates {
             log::warn!(
                 "Found {} possible duplicates for '{}':",
                 possible_duplicates.len(),
@@ -196,24 +220,24 @@ fn import(
                 import_id,
                 result: Err(Error::Duplicates(possible_duplicates)),
             });
-        } else {
-            match create_new_place(api, &client, new_place) {
-                Ok(id) => {
-                    log::debug!("Successfully imported '{}' with ID={}", new_place.title, id);
-                    results.push(ImportResult {
-                        new_place,
-                        import_id,
-                        result: Ok(id),
-                    });
-                }
-                Err(err) => {
-                    log::warn!("Could not import '{}': {}", new_place.title, err);
-                    results.push(ImportResult {
-                        new_place,
-                        import_id,
-                        result: Err(Error::Other(err.to_string())),
-                    });
-                }
+            continue;
+        }
+        match create_new_place(api, &client, new_place) {
+            Ok(id) => {
+                log::debug!("Successfully imported '{}' with ID={}", new_place.title, id);
+                results.push(ImportResult {
+                    new_place,
+                    import_id,
+                    result: Ok(id),
+                });
+            }
+            Err(err) => {
+                log::warn!("Could not import '{}': {}", new_place.title, err);
+                results.push(ImportResult {
+                    new_place,
+                    import_id,
+                    result: Err(Error::Other(err.to_string())),
+                });
             }
         }
     }
