@@ -1,10 +1,3 @@
-use crate::import::*;
-use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
-use email_address_parser::EmailAddress;
-use ofdb_boundary::{Credentials, Entry, NewPlace, UpdatePlace};
-use ofdb_cli::*;
-use reqwest::blocking::Client;
 use std::{
     env,
     fs::File,
@@ -12,7 +5,17 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
+
+use anyhow::{anyhow, Result};
+use clap::{Args, Parser, Subcommand};
+use email_address_parser::EmailAddress;
+use ofdb_boundary::{Credentials, Entry, NewPlace, UpdatePlace};
+use ofdb_cli::*;
+use reqwest::blocking::Client;
+use serde::Serialize;
 use uuid::Uuid;
+
+use crate::import::*;
 
 #[derive(Parser)]
 #[clap(name = "ofdb", about = "CLI for OpenFairDB", author)]
@@ -57,8 +60,14 @@ enum SubCommand {
     },
     #[clap(about = "Update entries")]
     Update {
-        #[clap(help = "JSON file")]
+        #[clap(help = "JSON or CSV file with entries")]
         file: PathBuf,
+        #[clap(
+            long = "report-file",
+            help = "File with the update report",
+            default_value = "update-report.json"
+        )]
+        report_file: PathBuf,
     },
     #[clap(about = "Review entries")]
     Review {
@@ -110,7 +119,7 @@ fn main() -> Result<()> {
             ignore_duplicates,
         ),
         C::Read { uuids } => read(&args.opt.api, uuids),
-        C::Update { file } => update(&args.opt.api, file),
+        C::Update { file, report_file } => update(&args.opt.api, file, report_file),
         C::Review {
             email,
             password,
@@ -126,11 +135,45 @@ fn read(api: &str, uuids: Vec<Uuid>) -> Result<()> {
     Ok(())
 }
 
-fn update(api: &str, path: PathBuf) -> Result<()> {
+fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .ok_or_else(|| anyhow!("Unsupported file extension"))?;
+    let file_type = ext.parse()?;
+    log::info!(
+        "Update entries from file ({}): {}",
+        format!("{:?}", file_type).to_uppercase(),
+        path.display()
+    );
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
-    let places: Vec<Entry> = serde_json::from_reader(reader)?;
-    log::debug!("Read {} places from JSON file", places.len());
+
+    let places = match file_type {
+        FileType::Json => {
+            let places: Vec<Entry> = serde_json::from_reader(reader)?;
+            log::debug!("Read {} places from JSON file", places.len());
+            places
+        }
+        FileType::Csv => {
+            let csv_results = csv::places_from_reader(reader)?;
+            if csv_results.iter().any(|r| r.result.is_err()) {
+                let report = Report::from(csv_results);
+                log::warn!(
+                    "{} csv records contain errors ",
+                    report.csv_import_failures.len()
+                );
+                write_import_report(report, report_file_path)?;
+                return Ok(());
+            } else {
+                let places: Vec<Entry> =
+                    csv_results.into_iter().map(|r| r.result.unwrap()).collect();
+                log::debug!("Import {} places from CSV file", places.len());
+                places
+            }
+        }
+    };
+
     let client = new_client()?;
     for entry in places {
         let id = entry.id.clone();
@@ -158,7 +201,7 @@ fn import(
     let ext = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Unsupported file extension"))?;
+        .ok_or_else(|| anyhow!("Unsupported file extension"))?;
     let file_type = ext.parse()?;
     log::info!(
         "Import entries from file ({}): {}",
@@ -278,7 +321,11 @@ fn review(api: &str, email: String, password: String, path: PathBuf) -> Result<(
     Ok(())
 }
 
-fn write_import_report<P: AsRef<Path>>(report: Report, path: P) -> Result<()> {
+fn write_import_report<P: AsRef<Path>, T, S>(report: Report<T, S>, path: P) -> Result<()>
+where
+    T: Serialize,
+    S: Serialize,
+{
     let file = File::create(path)?;
     let writer = io::BufWriter::new(file);
     serde_json::to_writer_pretty(writer, &report)?;

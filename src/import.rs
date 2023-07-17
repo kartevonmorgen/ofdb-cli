@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ofdb_boundary::{NewPlace, PlaceSearchResult};
+use ofdb_boundary::{Entry, NewPlace, PlaceSearchResult};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, result};
 use thiserror::Error;
@@ -30,9 +30,16 @@ pub struct ImportResult<'a> {
 }
 
 #[derive(Debug)]
-pub struct CsvImportResult {
+pub struct UpdateResult<'a> {
+    pub place: &'a Entry,
+    pub import_id: Option<String>,
+    pub result: result::Result<PlaceId, Error>,
+}
+
+#[derive(Debug)]
+pub struct CsvImportResult<T> {
     pub record_nr: usize,
-    pub result: result::Result<NewPlace, CsvImportError>,
+    pub result: result::Result<T, CsvImportError>,
 }
 
 impl ImportResult<'_> {
@@ -48,8 +55,8 @@ impl ImportResult<'_> {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct FailureReport {
-    pub new_place: NewPlace,
+pub struct FailureReport<T> {
+    pub place: T,
     pub import_id: Option<String>,
     pub error: String,
 }
@@ -62,16 +69,16 @@ pub struct DuplicateReport {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct SuccessReport {
-    pub new_place: NewPlace,
+pub struct SuccessReport<T> {
+    pub place: T,
     pub import_id: Option<String>,
     pub uuid: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct CsvImportSuccessReport {
+pub struct CsvImportSuccessReport<T> {
     pub record_nr: usize,
-    pub new_place: NewPlace,
+    pub place: T,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -81,15 +88,15 @@ pub struct CsvImportFailureReport {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Report {
+pub struct Report<T, S> {
     pub duplicates: Vec<DuplicateReport>,
-    pub failures: Vec<FailureReport>,
-    pub successes: Vec<SuccessReport>,
-    pub csv_import_successes: Vec<CsvImportSuccessReport>,
+    pub failures: Vec<FailureReport<T>>,
+    pub successes: Vec<S>,
+    pub csv_import_successes: Vec<CsvImportSuccessReport<T>>,
     pub csv_import_failures: Vec<CsvImportFailureReport>,
 }
 
-impl TryFrom<&ImportResult<'_>> for FailureReport {
+impl TryFrom<&ImportResult<'_>> for FailureReport<NewPlace> {
     type Error = ();
     fn try_from(res: &ImportResult) -> Result<Self, Self::Error> {
         res.err()
@@ -98,7 +105,7 @@ impl TryFrom<&ImportResult<'_>> for FailureReport {
                 _ => None,
             })
             .map(|e| FailureReport {
-                new_place: res.place().to_owned(),
+                place: res.place().to_owned(),
                 import_id: res.import_id.clone(),
                 error: e.to_string(),
             })
@@ -123,12 +130,12 @@ impl TryFrom<&ImportResult<'_>> for DuplicateReport {
     }
 }
 
-impl TryFrom<&ImportResult<'_>> for SuccessReport {
+impl TryFrom<&ImportResult<'_>> for SuccessReport<NewPlace> {
     type Error = ();
     fn try_from(res: &ImportResult) -> Result<Self, Self::Error> {
         res.id()
-            .map(|id| SuccessReport {
-                new_place: res.place().to_owned(),
+            .map(|id| Self {
+                place: res.place().to_owned(),
                 import_id: res.import_id.clone(),
                 uuid: id.to_owned(),
             })
@@ -136,23 +143,26 @@ impl TryFrom<&ImportResult<'_>> for SuccessReport {
     }
 }
 
-impl TryFrom<&CsvImportResult> for CsvImportSuccessReport {
+impl<T> TryFrom<&CsvImportResult<T>> for CsvImportSuccessReport<T>
+where
+    T: Clone,
+{
     type Error = ();
-    fn try_from(res: &CsvImportResult) -> Result<Self, Self::Error> {
+    fn try_from(res: &CsvImportResult<T>) -> Result<Self, Self::Error> {
         let CsvImportResult { record_nr, result } = res;
         result
             .as_ref()
-            .map(|new_place| CsvImportSuccessReport {
+            .map(|place| CsvImportSuccessReport {
                 record_nr: *record_nr,
-                new_place: new_place.clone(),
+                place: place.clone(),
             })
             .map_err(|_| ())
     }
 }
 
-impl TryFrom<&CsvImportResult> for CsvImportFailureReport {
+impl<T> TryFrom<&CsvImportResult<T>> for CsvImportFailureReport {
     type Error = ();
-    fn try_from(res: &CsvImportResult) -> Result<Self, Self::Error> {
+    fn try_from(res: &CsvImportResult<T>) -> Result<Self, Self::Error> {
         let CsvImportResult { record_nr, result } = res;
         result
             .as_ref()
@@ -165,7 +175,7 @@ impl TryFrom<&CsvImportResult> for CsvImportFailureReport {
     }
 }
 
-impl From<Vec<ImportResult<'_>>> for Report {
+impl From<Vec<ImportResult<'_>>> for Report<NewPlace, SuccessReport<NewPlace>> {
     fn from(results: Vec<ImportResult>) -> Self {
         let failures = results
             .iter()
@@ -189,13 +199,14 @@ impl From<Vec<ImportResult<'_>>> for Report {
             duplicates,
             failures,
             successes,
-            ..Default::default()
+            csv_import_failures: Default::default(),
+            csv_import_successes: Default::default(),
         }
     }
 }
 
-impl From<Vec<CsvImportResult>> for Report {
-    fn from(results: Vec<CsvImportResult>) -> Self {
+impl From<Vec<CsvImportResult<NewPlace>>> for Report<NewPlace, SuccessReport<NewPlace>> {
+    fn from(results: Vec<CsvImportResult<NewPlace>>) -> Self {
         let csv_import_failures = results
             .iter()
             .map(CsvImportFailureReport::try_from)
@@ -211,7 +222,33 @@ impl From<Vec<CsvImportResult>> for Report {
         Self {
             csv_import_failures,
             csv_import_successes,
-            ..Default::default()
+            duplicates: Default::default(),
+            failures: Default::default(),
+            successes: Default::default(),
+        }
+    }
+}
+
+impl From<Vec<CsvImportResult<Entry>>> for Report<Entry, SuccessReport<Entry>> {
+    fn from(results: Vec<CsvImportResult<Entry>>) -> Self {
+        let csv_import_failures = results
+            .iter()
+            .map(CsvImportFailureReport::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        let csv_import_successes = results
+            .iter()
+            .map(CsvImportSuccessReport::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        Self {
+            csv_import_failures,
+            csv_import_successes,
+            duplicates: Default::default(),
+            failures: Default::default(),
+            successes: Default::default(),
         }
     }
 }

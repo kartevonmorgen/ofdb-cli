@@ -1,7 +1,7 @@
 use crate::import::{CsvImportError, CsvImportResult};
 use anyhow::Result;
 use csv::ReaderBuilder;
-use ofdb_boundary::{Address, NewPlace, Review, ReviewStatus};
+use ofdb_boundary::{Address, CustomLink, Entry, NewPlace, Review, ReviewStatus};
 use ofdb_core::gateways::geocode::GeoCodingGateway;
 use ofdb_gateways::opencage::*;
 use serde::Deserialize;
@@ -35,7 +35,7 @@ struct NewPlaceRecord {
 pub fn new_places_from_reader<R: Read>(
     r: R,
     opencage_api_key: Option<String>,
-) -> Result<Vec<CsvImportResult>> {
+) -> Result<Vec<CsvImportResult<NewPlace>>> {
     log::info!("Read entries form CSV");
     let mut rdr = ReaderBuilder::new().from_reader(r);
 
@@ -123,6 +123,187 @@ pub fn new_places_from_reader<R: Read>(
         }
     }
     Ok(results)
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaceRecord {
+    id: String,
+    created: i64,
+    version: u64,
+    title: String,
+    description: String,
+    lat: f64,
+    lng: f64,
+    street: Option<String>,
+    zip: Option<String>,
+    city: Option<String>,
+    country: Option<String>,
+    state: Option<String>,
+    contact_name: Option<String>,
+    contact_email: Option<String>,
+    contact_phone: Option<String>,
+    opening_hours: Option<String>,
+    founded_on: Option<Date>,
+    tags: String,
+    ratings: Vec<String>,
+    homepage: Option<String>,
+    license: String,
+    image_url: Option<String>,
+    image_link_url: Option<String>,
+    custom_link_title_0: Option<String>,
+    custom_link_title_1: Option<String>,
+    custom_link_title_2: Option<String>,
+    custom_link_title_3: Option<String>,
+    custom_link_title_4: Option<String>,
+    custom_link_description_0: Option<String>,
+    custom_link_description_1: Option<String>,
+    custom_link_description_2: Option<String>,
+    custom_link_description_3: Option<String>,
+    custom_link_description_4: Option<String>,
+    custom_link_url_0: Option<String>,
+    custom_link_url_1: Option<String>,
+    custom_link_url_2: Option<String>,
+    custom_link_url_3: Option<String>,
+    custom_link_url_4: Option<String>,
+}
+
+pub fn places_from_reader<R: Read>(r: R) -> Result<Vec<CsvImportResult<Entry>>> {
+    log::info!("Read entries form CSV");
+    let mut rdr = ReaderBuilder::new().from_reader(r);
+    let mut results = vec![];
+
+    for (record_nr, result) in rdr.deserialize().enumerate() {
+        match result {
+            Err(err) => {
+                log::warn!("Invalid CSV entry: {err}");
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Err(CsvImportError::InvalidRecord(err.to_string())),
+                });
+            }
+            Ok(r) => {
+                let PlaceRecord {
+                    id,
+                    created,
+                    version,
+                    title,
+                    description,
+                    lat,
+                    lng,
+                    street,
+                    zip,
+                    city,
+                    country,
+                    state,
+                    contact_name,
+                    homepage,
+                    opening_hours,
+                    founded_on,
+                    image_url,
+                    image_link_url,
+                    ratings,
+                    custom_link_title_0,
+                    custom_link_title_1,
+                    custom_link_title_2,
+                    custom_link_title_3,
+                    custom_link_title_4,
+                    custom_link_description_0,
+                    custom_link_description_1,
+                    custom_link_description_2,
+                    custom_link_description_3,
+                    custom_link_description_4,
+                    custom_link_url_0,
+                    custom_link_url_1,
+                    custom_link_url_2,
+                    custom_link_url_3,
+                    custom_link_url_4,
+                    ..
+                } = r;
+
+                let license = Some(r.license);
+                let categories = vec![];
+                let telephone = r.contact_phone;
+                let email = r.contact_email;
+                let tags = r.tags.split(',').map(ToString::to_string).collect();
+
+                let custom_links = vec![
+                    construct_custom_link(
+                        custom_link_url_0,
+                        custom_link_title_0,
+                        custom_link_description_0,
+                    ),
+                    construct_custom_link(
+                        custom_link_url_1,
+                        custom_link_title_1,
+                        custom_link_description_1,
+                    ),
+                    construct_custom_link(
+                        custom_link_url_2,
+                        custom_link_title_2,
+                        custom_link_description_2,
+                    ),
+                    construct_custom_link(
+                        custom_link_url_3,
+                        custom_link_title_3,
+                        custom_link_description_3,
+                    ),
+                    construct_custom_link(
+                        custom_link_url_4,
+                        custom_link_title_4,
+                        custom_link_description_4,
+                    ),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+
+                let place = Entry {
+                    id,
+                    created,
+                    version,
+                    title,
+                    description,
+                    lat,
+                    lng,
+                    city,
+                    country,
+                    state,
+                    street,
+                    zip,
+                    contact_name,
+                    email,
+                    founded_on,
+                    homepage,
+                    categories,
+                    license,
+                    custom_links,
+                    opening_hours,
+                    tags,
+                    telephone,
+                    image_url,
+                    image_link_url,
+                    ratings,
+                };
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Ok(place),
+                });
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn construct_custom_link(
+    url: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+) -> Option<CustomLink> {
+    url.map(|url| CustomLink {
+        url,
+        title,
+        description,
+    })
 }
 
 fn check_address_and_geo_coordinates(
@@ -224,5 +405,12 @@ mod tests {
         let new_place = import[0].result.as_ref().unwrap();
         assert_eq!(new_place.title, "GLS Bank");
         assert_eq!(new_place.tags, vec!["bank", "geld", "commercial"]);
+    }
+
+    #[test]
+    fn read_updates_from_csv_file() {
+        let file = File::open("tests/update-example.csv").unwrap();
+        let updates = places_from_reader(file).unwrap();
+        assert!(updates[0].result.is_ok());
     }
 }
