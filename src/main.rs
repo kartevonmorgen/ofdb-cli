@@ -33,10 +33,9 @@ struct Opt {
 enum SubCommand {
     #[clap(about = "Import new entries")]
     Import {
-        #[clap(parse(from_os_str), help = "JSON or CSV file with entries")]
+        #[clap(help = "JSON or CSV file with entries")]
         file: PathBuf,
         #[clap(
-            parse(from_os_str),
             long = "report-file",
             help = "File with the import report",
             default_value = "import-report.json"
@@ -53,12 +52,12 @@ enum SubCommand {
     },
     #[clap(about = "Read entry")]
     Read {
-        #[clap(required = true, min_values = 1, help = "UUID")]
+        #[clap(required = true, num_args = 1.., help = "UUID")]
         uuids: Vec<Uuid>,
     },
     #[clap(about = "Update entries")]
     Update {
-        #[clap(parse(from_os_str), help = "JSON file")]
+        #[clap(help = "JSON file")]
         file: PathBuf,
     },
     #[clap(about = "Review entries")]
@@ -67,7 +66,7 @@ enum SubCommand {
         email: String,
         #[clap(long = "password", required = true, help = "Password")]
         password: String,
-        #[clap(parse(from_os_str), required = true, help = "CSV file")]
+        #[clap(required = true, help = "CSV file")]
         file: PathBuf,
     },
 }
