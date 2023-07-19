@@ -15,9 +15,11 @@ pub enum Error {
 #[derive(Debug, Error)]
 pub enum CsvImportError {
     #[error("Could not read CSV record: {0}")]
-    InvalidRecord(String),
+    Record(String),
     #[error("Invalid address or geo coordinates: {0}")]
-    InvalidAddressOrGeoCoordinates(String),
+    AddressOrGeoCoordinates(String),
+    #[error("Invalid patch request: {0}")]
+    PatchRequest(String),
 }
 
 type PlaceId = String;

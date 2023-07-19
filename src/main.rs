@@ -68,6 +68,11 @@ enum SubCommand {
             default_value = "update-report.json"
         )]
         report_file: PathBuf,
+        #[clap(
+            long = "patch",
+            help = "use (non-standard) diff syntax to update fields"
+        )]
+        patch: bool,
     },
     #[clap(about = "Review entries")]
     Review {
@@ -119,7 +124,11 @@ fn main() -> Result<()> {
             ignore_duplicates,
         ),
         C::Read { uuids } => read(&args.opt.api, uuids),
-        C::Update { file, report_file } => update(&args.opt.api, file, report_file),
+        C::Update {
+            file,
+            report_file,
+            patch,
+        } => update(&args.opt.api, file, report_file, patch),
         C::Review {
             email,
             password,
@@ -135,7 +144,7 @@ fn read(api: &str, uuids: Vec<Uuid>) -> Result<()> {
     Ok(())
 }
 
-fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
+fn update(api: &str, path: PathBuf, report_file_path: PathBuf, patch: bool) -> Result<()> {
     let ext = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -149,6 +158,8 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
 
+    let client = new_client()?;
+
     let places = match file_type {
         FileType::Json => {
             let places: Vec<Entry> = serde_json::from_reader(reader)?;
@@ -156,7 +167,11 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
             places
         }
         FileType::Csv => {
-            let csv_results = csv::places_from_reader(reader)?;
+            let csv_results = if patch {
+                csv::patch_places_with_reader(reader, api, &client)?
+            } else {
+                csv::places_from_reader(reader)?
+            };
             if csv_results.iter().any(|r| r.result.is_err()) {
                 let report = Report::from(csv_results);
                 log::warn!(
@@ -166,6 +181,11 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
                 write_import_report(report, report_file_path)?;
                 return Ok(());
             } else {
+                if patch {
+                    return Err(anyhow!(
+                        "Patch updates are currently not supported for JSON files"
+                    ));
+                }
                 let places: Vec<Entry> =
                     csv_results.into_iter().map(|r| r.result.unwrap()).collect();
                 log::debug!("Import {} places from CSV file", places.len());
@@ -174,7 +194,6 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf) -> Result<()> {
         }
     };
 
-    let client = new_client()?;
     for entry in places {
         let id = entry.id.clone();
         let update = UpdatePlace::from(entry);

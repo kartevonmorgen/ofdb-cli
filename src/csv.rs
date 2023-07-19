@@ -1,13 +1,20 @@
-use crate::import::{CsvImportError, CsvImportResult};
-use anyhow::Result;
+use std::io::Read;
+
+use anyhow::{anyhow, Result};
 use csv::ReaderBuilder;
+use serde::Deserialize;
+use thiserror::Error;
+use time::Date;
+use uuid::Uuid;
+
 use ofdb_boundary::{Address, CustomLink, Entry, NewPlace, Review, ReviewStatus};
 use ofdb_core::gateways::geocode::GeoCodingGateway;
 use ofdb_gateways::opencage::*;
-use serde::Deserialize;
-use std::io::Read;
-use time::Date;
-use uuid::Uuid;
+
+use crate::{
+    import::{CsvImportError, CsvImportResult},
+    read_entries, Client,
+};
 
 #[derive(Debug, Deserialize)]
 struct NewPlaceRecord {
@@ -52,7 +59,7 @@ pub fn new_places_from_reader<R: Read>(
             Err(err) => {
                 results.push(CsvImportResult {
                     record_nr,
-                    result: Err(CsvImportError::InvalidRecord(err.to_string())),
+                    result: Err(CsvImportError::Record(err.to_string())),
                 });
             }
             Ok(r) => {
@@ -113,9 +120,7 @@ pub fn new_places_from_reader<R: Read>(
                     Err(err) => {
                         results.push(CsvImportResult {
                             record_nr,
-                            result: Err(CsvImportError::InvalidAddressOrGeoCoordinates(
-                                err.to_string(),
-                            )),
+                            result: Err(CsvImportError::AddressOrGeoCoordinates(err.to_string())),
                         });
                     }
                 }
@@ -155,16 +160,19 @@ struct PlaceRecord {
     custom_link_title_2: Option<String>,
     custom_link_title_3: Option<String>,
     custom_link_title_4: Option<String>,
+    custom_link_title_5: Option<String>,
     custom_link_description_0: Option<String>,
     custom_link_description_1: Option<String>,
     custom_link_description_2: Option<String>,
     custom_link_description_3: Option<String>,
     custom_link_description_4: Option<String>,
+    custom_link_description_5: Option<String>,
     custom_link_url_0: Option<String>,
     custom_link_url_1: Option<String>,
     custom_link_url_2: Option<String>,
     custom_link_url_3: Option<String>,
     custom_link_url_4: Option<String>,
+    custom_link_url_5: Option<String>,
 }
 
 pub fn places_from_reader<R: Read>(r: R) -> Result<Vec<CsvImportResult<Entry>>> {
@@ -178,7 +186,7 @@ pub fn places_from_reader<R: Read>(r: R) -> Result<Vec<CsvImportResult<Entry>>> 
                 log::warn!("Invalid CSV entry: {err}");
                 results.push(CsvImportResult {
                     record_nr,
-                    result: Err(CsvImportError::InvalidRecord(err.to_string())),
+                    result: Err(CsvImportError::Record(err.to_string())),
                 });
             }
             Ok(r) => {
@@ -207,16 +215,19 @@ pub fn places_from_reader<R: Read>(r: R) -> Result<Vec<CsvImportResult<Entry>>> 
                     custom_link_title_2,
                     custom_link_title_3,
                     custom_link_title_4,
+                    custom_link_title_5,
                     custom_link_description_0,
                     custom_link_description_1,
                     custom_link_description_2,
                     custom_link_description_3,
                     custom_link_description_4,
+                    custom_link_description_5,
                     custom_link_url_0,
                     custom_link_url_1,
                     custom_link_url_2,
                     custom_link_url_3,
                     custom_link_url_4,
+                    custom_link_url_5,
                     ..
                 } = r;
 
@@ -225,6 +236,13 @@ pub fn places_from_reader<R: Read>(r: R) -> Result<Vec<CsvImportResult<Entry>>> 
                 let telephone = r.contact_phone;
                 let email = r.contact_email;
                 let tags = r.tags.split(',').map(ToString::to_string).collect();
+
+                if custom_link_url_5.is_some()
+                    || custom_link_title_5.is_some()
+                    || custom_link_description_5.is_some()
+                {
+                    log::warn!("At the moment a max. of 5 custom links are supported!");
+                }
 
                 let custom_links = vec![
                     construct_custom_link(
@@ -306,6 +324,383 @@ fn construct_custom_link(
     })
 }
 
+pub fn patch_places_with_reader<R: Read>(
+    r: R,
+    api: &str,
+    client: &Client,
+) -> Result<Vec<CsvImportResult<Entry>>> {
+    log::info!("Read entries form CSV");
+    let mut rdr = ReaderBuilder::new().from_reader(r);
+    let mut results = vec![];
+
+    let mut patch_place_records = vec![];
+
+    for (record_nr, result) in rdr.deserialize::<PatchPlaceRecord>().enumerate() {
+        match result {
+            Err(err) => {
+                log::warn!("Invalid CSV entry: {err}");
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Err(CsvImportError::Record(err.to_string())),
+                });
+            }
+            Ok(record) => match record.id.parse::<Uuid>() {
+                Ok(uuid) => {
+                    patch_place_records.push((uuid, record_nr, record));
+                }
+                Err(err) => {
+                    let err_msg = format!("Invalid entry ID: {err}");
+                    results.push(CsvImportResult {
+                        record_nr,
+                        result: Err(CsvImportError::Record(err_msg)),
+                    });
+                }
+            },
+        }
+    }
+    let uuids: Vec<_> = patch_place_records
+        .iter()
+        .map(|(uuid, _, _)| *uuid)
+        .collect();
+    let mut original_entries = read_entries(api, client, uuids)?;
+
+    for (_, record_nr, record) in patch_place_records {
+        let index = original_entries
+            .iter()
+            .position(|x| x.id == record.id)
+            .unwrap();
+        let original = original_entries.remove(index);
+        match patch_place(original, record) {
+            Ok(place) => {
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Ok(place),
+                });
+            }
+            Err(err) => {
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Err(CsvImportError::PatchRequest(err.to_string())),
+                });
+            }
+        }
+    }
+    Ok(results)
+}
+
+const OP_APPEND: &str = "++";
+const OP_DELETE: &str = "--";
+const OP_REPLACE: &str = "==";
+
+const APPEND_SEPERATOR: &str = " ";
+
+fn patch_place(mut original: Entry, record: PatchPlaceRecord) -> Result<Entry> {
+    let PatchPlaceRecord {
+        id,
+        created,
+        version,
+        license,
+        ratings,
+        title,
+        description,
+        lat,
+        lng,
+        street,
+        zip,
+        city,
+        country,
+        state,
+        contact_name,
+        contact_email,
+        contact_phone,
+        tags,
+        homepage,
+        opening_hours,
+        founded_on,
+        image_url,
+        image_link_url,
+        // TODO custom_link_title_0,
+        // TODO custom_link_title_1,
+        // TODO custom_link_title_2,
+        // TODO custom_link_title_3,
+        // TODO custom_link_title_4,
+        // TODO custom_link_title_5,
+        // TODO custom_link_description_0,
+        // TODO custom_link_description_1,
+        // TODO custom_link_description_2,
+        // TODO custom_link_description_3,
+        // TODO custom_link_description_4,
+        // TODO custom_link_description_5,
+        // TODO custom_link_url_0,
+        // TODO custom_link_url_1,
+        // TODO custom_link_url_2,
+        // TODO custom_link_url_3,
+        // TODO custom_link_url_4,
+        // TODO custom_link_url_5,
+        ..
+    } = record;
+
+    assert_eq!(original.id, id);
+
+    if original.version + 1 != version {
+        return Err(anyhow!("Invalid entry version"));
+    }
+    original.version = version;
+
+    if created.is_some() {
+        log::warn!("The field 'created' can't be modified.");
+    }
+
+    if license.is_some() {
+        log::warn!("The license can't be modified.");
+    }
+
+    if ratings.is_some() {
+        log::warn!("The ratings can't be modified.");
+    }
+
+    patch_string_field("title", &mut original.title, title)?;
+    patch_string_field("description", &mut original.description, description)?;
+    patch_float_field("lat", &mut original.lat, lat)?;
+    patch_float_field("lng", &mut original.lng, lng)?;
+    patch_optional_string_field("street", &mut original.street, street)?;
+    patch_optional_string_field("zip", &mut original.zip, zip)?;
+    patch_optional_string_field("city", &mut original.city, city)?;
+    patch_optional_string_field("country", &mut original.country, country)?;
+    patch_optional_string_field("state", &mut original.state, state)?;
+    patch_optional_string_field("contact_name", &mut original.contact_name, contact_name)?;
+    patch_optional_string_field("contact_email", &mut original.email, contact_email)?;
+    patch_optional_string_field("contact_phone", &mut original.telephone, contact_phone)?;
+    patch_optional_string_field("homepage", &mut original.homepage, homepage)?;
+    patch_optional_string_field("opening_hours", &mut original.opening_hours, opening_hours)?;
+    patch_optional_date_field("founded_on", &mut original.founded_on, founded_on)?;
+    patch_optional_string_field("image_url", &mut original.image_url, image_url)?;
+    patch_optional_string_field(
+        "image_link_url",
+        &mut original.image_link_url,
+        image_link_url,
+    )?;
+
+    if let Some(tags) = tags {
+        for tag in tags.split(',') {
+            match patch_op(tag) {
+                Ok(PatchOp::Append(new_tag)) => {
+                    original.tags.push(new_tag.to_string());
+                }
+                Ok(PatchOp::Delete(remove_tag)) => {
+                    original.tags.retain(|t| t != remove_tag);
+                }
+                Ok(PatchOp::Replace(_)) => {
+                    log::warn!("Tags can't be replaced, only removed or added");
+                }
+                Ok(PatchOp::DeleteAll) => {
+                    log::warn!("You must not remove all tags at once");
+                }
+                Err(err) => {
+                    log::warn!("Invalid tag patch operation: {err}");
+                }
+            }
+        }
+    }
+
+    Ok(original)
+}
+
+#[derive(Debug, PartialEq)]
+enum PatchOp<'a> {
+    Append(&'a str),
+    Replace(&'a str),
+    Delete(&'a str),
+    DeleteAll,
+}
+
+#[derive(Debug, PartialEq, Error)]
+enum PatchOpError {
+    #[error("No patch operation found")]
+    NoOp,
+    #[error("Empty string")]
+    EmptyString,
+}
+
+fn patch_string_field(
+    field_name: &str,
+    field: &mut String,
+    patch: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(patch) = patch {
+        let op = patch_op(&patch)?;
+        match op {
+            PatchOp::Replace(replace) => {
+                *field = replace.to_string();
+            }
+            PatchOp::Append(append) => {
+                field.push_str(APPEND_SEPERATOR);
+                field.push_str(append);
+            }
+            PatchOp::Delete(_) | PatchOp::DeleteAll => {
+                return Err(anyhow!("The field '{field_name}' can't be deleted."));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn patch_optional_string_field(
+    field_name: &str,
+    field: &mut Option<String>,
+    patch: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(patch) = patch {
+        let op = patch_op(&patch)?;
+        match op {
+            PatchOp::Replace(replace) => {
+                *field = Some(replace.to_string());
+            }
+            PatchOp::Append(append) => match field {
+                Some(field) => {
+                    field.push_str(APPEND_SEPERATOR);
+                    field.push_str(append);
+                }
+                None => {
+                    *field = Some(append.to_string());
+                }
+            },
+            PatchOp::Delete(_) => {
+                return Err(anyhow!("You can't delete only parts of '{field_name}'"));
+            }
+            PatchOp::DeleteAll => {
+                *field = None;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn patch_optional_date_field(
+    field_name: &str,
+    field: &mut Option<Date>,
+    patch: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(patch) = patch {
+        let op = patch_op(&patch)?;
+        match op {
+            PatchOp::Replace(replace) => {
+                let date: Date = serde_json::from_str(replace)?;
+                *field = Some(date);
+            }
+            PatchOp::Append(_) => {
+                return Err(anyhow!(
+                    "'{field_name}' can't be extended, replace or remove it"
+                ));
+            }
+            PatchOp::Delete(_) => {
+                return Err(anyhow!(
+                    "You can't delete only parts of '{field_name}', replace or remove it"
+                ));
+            }
+            PatchOp::DeleteAll => {
+                *field = None;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn patch_float_field(
+    field_name: &str,
+    field: &mut f64,
+    patch: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(patch) = patch {
+        let op = patch_op(&patch)?;
+        match op {
+            PatchOp::Replace(replace) => {
+                *field = replace.parse()?;
+            }
+            _ => {
+                return Err(anyhow!("You can only replace '{field_name}'"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn patch_op(s: &str) -> Result<PatchOp<'_>, PatchOpError> {
+    let trimmed = s.trim();
+
+    if trimmed.starts_with(OP_DELETE) {
+        let delete = trimmed.split(OP_DELETE).nth(1).unwrap().trim();
+        return Ok(if delete.is_empty() {
+            PatchOp::DeleteAll
+        } else {
+            PatchOp::Delete(delete)
+        });
+    }
+
+    if trimmed.starts_with(OP_APPEND) {
+        let append = trimmed.split(OP_APPEND).nth(1).unwrap().trim();
+        if append.is_empty() {
+            return Err(PatchOpError::EmptyString);
+        }
+        return Ok(PatchOp::Append(append.trim()));
+    }
+
+    if trimmed.starts_with(OP_REPLACE) {
+        let replace = trimmed.split(OP_REPLACE).nth(1).unwrap();
+        if replace.is_empty() {
+            return Err(PatchOpError::EmptyString);
+        }
+        return Ok(PatchOp::Replace(replace.trim()));
+    }
+
+    Err(PatchOpError::NoOp)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PatchPlaceRecord {
+    id: String,
+    version: u64,
+    created: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+    lat: Option<String>,
+    lng: Option<String>,
+    street: Option<String>,
+    zip: Option<String>,
+    city: Option<String>,
+    country: Option<String>,
+    state: Option<String>,
+    contact_name: Option<String>,
+    contact_email: Option<String>,
+    contact_phone: Option<String>,
+    opening_hours: Option<String>,
+    founded_on: Option<String>,
+    tags: Option<String>,
+    ratings: Option<String>,
+    homepage: Option<String>,
+    license: Option<String>,
+    image_url: Option<String>,
+    image_link_url: Option<String>,
+    // TODO custom_link_title_0: Option<String>,
+    // TODO custom_link_title_1: Option<String>,
+    // TODO custom_link_title_2: Option<String>,
+    // TODO custom_link_title_3: Option<String>,
+    // TODO custom_link_title_4: Option<String>,
+    // TODO custom_link_title_5: Option<String>,
+    // TODO custom_link_description_0: Option<String>,
+    // TODO custom_link_description_1: Option<String>,
+    // TODO custom_link_description_2: Option<String>,
+    // TODO custom_link_description_3: Option<String>,
+    // TODO custom_link_description_4: Option<String>,
+    // TODO custom_link_description_5: Option<String>,
+    // TODO custom_link_url_0: Option<String>,
+    // TODO custom_link_url_1: Option<String>,
+    // TODO custom_link_url_2: Option<String>,
+    // TODO custom_link_url_3: Option<String>,
+    // TODO custom_link_url_4: Option<String>,
+    // TODO custom_link_url_5: Option<String>,
+}
+
 fn check_address_and_geo_coordinates(
     geo_coding: &dyn GeoCodingGateway,
     addr: Address,
@@ -320,7 +715,7 @@ fn check_address_and_geo_coordinates(
             log::info!("Try to resolve lat/lang from address ({:?})", addr);
             match geo_coding.resolve_address_lat_lng(&addr) {
                 Some((lat, lng)) => Ok((Address::from(addr), (lat, lng))),
-                None => Err(anyhow::anyhow!("Unable to find geo coordinates")),
+                None => Err(anyhow!("Unable to find geo coordinates")),
             }
         }
         (true, Some(coordinates)) => {
@@ -332,7 +727,7 @@ fn check_address_and_geo_coordinates(
             // nothing to to
             Ok((addr, coordinates))
         }
-        (true, None) => Err(anyhow::anyhow!(
+        (true, None) => Err(anyhow!(
             "An address or geo coordinates (lat/lng) are required"
         )),
     }
@@ -412,5 +807,155 @@ mod tests {
         let file = File::open("tests/update-example.csv").unwrap();
         let updates = places_from_reader(file).unwrap();
         assert!(updates[0].result.is_ok());
+    }
+
+    mod patch {
+
+        use super::*;
+
+        fn default_entry() -> Entry {
+            Entry {
+                id: Default::default(),
+                created: Default::default(),
+                version: Default::default(),
+                title: Default::default(),
+                description: Default::default(),
+                lat: Default::default(),
+                lng: Default::default(),
+                street: Default::default(),
+                zip: Default::default(),
+                city: Default::default(),
+                country: Default::default(),
+                state: Default::default(),
+                contact_name: Default::default(),
+                email: Default::default(),
+                telephone: Default::default(),
+                homepage: Default::default(),
+                opening_hours: Default::default(),
+                founded_on: Default::default(),
+                categories: Default::default(),
+                tags: Default::default(),
+                ratings: Default::default(),
+                license: Default::default(),
+                image_url: Default::default(),
+                image_link_url: Default::default(),
+                custom_links: Default::default(),
+            }
+        }
+
+        #[test]
+        fn append() {
+            assert_eq!(patch_op("++foo"), Ok(PatchOp::Append("foo")));
+            assert_eq!(patch_op("  ++foo"), Ok(PatchOp::Append("foo")));
+            assert_eq!(patch_op("++   foo"), Ok(PatchOp::Append("foo")));
+            assert_eq!(patch_op("foo++"), Err(PatchOpError::NoOp));
+            assert_eq!(patch_op("++"), Err(PatchOpError::EmptyString));
+        }
+
+        #[test]
+        fn replace() {
+            assert_eq!(patch_op("==foo"), Ok(PatchOp::Replace("foo")));
+            assert_eq!(patch_op("  ==foo"), Ok(PatchOp::Replace("foo")));
+            assert_eq!(patch_op("==   foo"), Ok(PatchOp::Replace("foo")));
+            assert_eq!(patch_op("foo=="), Err(PatchOpError::NoOp));
+            assert_eq!(patch_op("=="), Err(PatchOpError::EmptyString));
+        }
+
+        #[test]
+        fn delete() {
+            assert_eq!(patch_op("--"), Ok(PatchOp::DeleteAll));
+            assert_eq!(patch_op("  --"), Ok(PatchOp::DeleteAll));
+            assert_eq!(patch_op("Foo bar --"), Err(PatchOpError::NoOp));
+            assert_eq!(patch_op("-- some text"), Ok(PatchOp::Delete("some text")));
+        }
+
+        #[test]
+        fn append_title() {
+            let original = Entry {
+                title: "Foo bar".to_string(),
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                title: Some("++baz".to_string()),
+                ..Default::default()
+            };
+            let patched = patch_place(original, record).unwrap();
+            assert_eq!(patched.title, "Foo bar baz");
+        }
+
+        #[test]
+        fn replace_title() {
+            let original = Entry {
+                title: "Foo bar".to_string(),
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                title: Some("==Baz".to_string()),
+                ..Default::default()
+            };
+            let patched = patch_place(original, record).unwrap();
+            assert_eq!(patched.title, "Baz");
+        }
+
+        #[test]
+        fn remove_title() {
+            let original = Entry {
+                title: "Foo bar".to_string(),
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                title: Some("--".to_string()),
+                ..Default::default()
+            };
+            assert!(patch_place(original, record).is_err());
+        }
+
+        #[test]
+        fn append_tags() {
+            let original = Entry {
+                tags: vec!["foo".to_string(), "bar".to_string()],
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                tags: Some("++baz,++boing".to_string()),
+                ..Default::default()
+            };
+            let patched = patch_place(original, record).unwrap();
+            assert_eq!(patched.tags, vec!["foo", "bar", "baz", "boing"]);
+        }
+
+        #[test]
+        fn remove_tags() {
+            let original = Entry {
+                tags: vec!["foo".to_string(), "bar".to_string()],
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                tags: Some("--foo".to_string()),
+                ..Default::default()
+            };
+            let patched = patch_place(original, record).unwrap();
+            assert_eq!(patched.tags, vec!["bar"]);
+        }
+
+        #[test]
+        fn remove_and_append_tags() {
+            let original = Entry {
+                tags: vec!["foo".to_string(), "bar".to_string()],
+                ..default_entry()
+            };
+            let record = PatchPlaceRecord {
+                version: original.version + 1,
+                tags: Some("--bar, ++baz".to_string()),
+                ..Default::default()
+            };
+            let patched = patch_place(original, record).unwrap();
+            assert_eq!(patched.tags, vec!["foo", "baz"]);
+        }
     }
 }
