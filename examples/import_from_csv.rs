@@ -59,13 +59,13 @@ pub fn main() -> Result<()> {
 
         let city = record
             .Ort
-            .replace("\n", " ")
+            .replace('\n', " ")
             .replace("  ", " ")
             .trim()
             .to_string();
         let title = record
             .Titel
-            .replace("\n", " ")
+            .replace('\n', " ")
             .replace("  ", " ")
             .trim()
             .to_string();
@@ -154,11 +154,11 @@ pub fn main() -> Result<()> {
             record_id
         );
         let import_id = Some(record_id.to_string());
-        match ofdb::create_new_place(api, &client, &p) {
+        match ofdb::create_new_place(api, &client, p) {
             Ok(id) => {
                 log::info!("Successfully imported '{}' with ID={}", p.title, id);
                 results.push(ofdb::import::ImportResult {
-                    new_place: &p,
+                    new_place: p,
                     import_id,
                     result: Ok(id),
                 });
@@ -166,7 +166,7 @@ pub fn main() -> Result<()> {
             Err(err) => {
                 log::warn!("Could not import '{}': {}", p.title, err);
                 results.push(ofdb::import::ImportResult {
-                    new_place: &p,
+                    new_place: p,
                     import_id,
                     result: Err(ofdb::import::Error::Other(err.to_string())),
                 });
