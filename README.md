@@ -32,6 +32,14 @@ ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb
 
 NOTE: replace the OpenCage API key with a valid one.
 
+#### CSV Import ignoring duplicates
+
+If you have recieved duplicate wanrings in your first import, but you are sure, that your entries are really new ones, use the additional command:
+
+```sh
+--ignore-duplicates
+```
+
 ### Update Entries
 
 ```sh
