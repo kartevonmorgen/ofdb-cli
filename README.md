@@ -14,7 +14,7 @@
   - `~/.cargo/bin/ofdb` on Linux or
   - `C:\Users\USERNAME\.cargo\bin\ofdb.exe` on Windows.
 
-## Update
+### Update client
 
 ```sh
 cargo install --locked --force --git https://github.com/kartevonmorgen/ofdb-cli
@@ -51,6 +51,15 @@ The file to update must be an array of entries:
   { "id": "...", "title": ".." }
 ]
 ```
+
+#### Update (Patch) entries via csv
+
+```sh
+ofdb --api-url https://dev.ofdb.io/v0/ update --patch --report-file update-report.json update.csv
+```
+- you have to increase the version number manually in your csv
+- leave the licencse form empty, you can't patch the license
+Make sure the CSV file has all required fields (an example can be found in [`tests/update-patch.csv`]([https://github.com/kartevonmorgen/ofdb-cli/blob/master/tests/review-example.csv](https://github.com/kartevonmorgen/ofdb-cli/blob/master/tests/update-patch.csv))).
 
 #### Opencage API-Key
 
