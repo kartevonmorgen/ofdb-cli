@@ -26,15 +26,25 @@ pub fn update_place(api: &str, client: &Client, id: &str, place: &UpdatePlace) -
 
 pub fn read_entries(api: &str, client: &Client, uuids: Vec<Uuid>) -> Result<Vec<Entry>> {
     log::debug!("Read {} places", uuids.len());
-    let uuids = uuids
-        .into_iter()
-        .map(Uuid::simple)
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let url = format!("{}/entries/{}", api, uuids);
-    let res = client.get(url).send()?;
-    handle_response(res)
+
+    let chunks = uuids.chunks(50).collect::<Vec<&[Uuid]>>();
+
+    let mut all_entries = vec![];
+
+    for uuids in chunks {
+        let ids = uuids
+            .iter()
+            .copied()
+            .map(Uuid::simple)
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let url = format!("{}/entries/{}", api, ids);
+        let res = client.get(url).send()?;
+        let mut entries = handle_response(res)?;
+        all_entries.append(&mut entries);
+    }
+    Ok(all_entries)
 }
 
 /// Login

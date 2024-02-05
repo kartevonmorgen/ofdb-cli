@@ -365,7 +365,7 @@ pub fn patch_places_with_reader<R: Read>(
     Ok(results)
 }
 
-pub fn patches_from_reader<R: Read>(
+fn patches_from_reader<R: Read>(
     r: R,
 ) -> Result<(
     Vec<(Uuid, usize, PatchPlaceRecord)>,
@@ -839,8 +839,9 @@ mod tests {
     #[test]
     fn read_patch_updates_from_csv_file() {
         let file = File::open("tests/update-patch-example.csv").unwrap();
-        let (patches, results) = patches_from_reader(file).unwrap();
+        let (patches, failures) = patches_from_reader(file).unwrap();
         assert_eq!(patches.len(), 4);
+        assert_eq!(failures.len(), 0);
     }
 
     mod patch {
