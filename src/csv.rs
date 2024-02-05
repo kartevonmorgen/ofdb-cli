@@ -330,9 +330,49 @@ pub fn patch_places_with_reader<R: Read>(
     client: &Client,
 ) -> Result<Vec<CsvImportResult<Entry>>> {
     log::info!("Read entries form CSV");
+
+    let (patch_place_records, mut results) = patches_from_reader(r)?;
+
+    let uuids: Vec<_> = patch_place_records
+        .iter()
+        .map(|(uuid, _, _)| *uuid)
+        .collect();
+
+    log::info!("Read current state of all {} entries", uuids.len());
+    let mut original_entries = read_entries(api, client, uuids)?;
+
+    for (_, record_nr, record) in patch_place_records {
+        let index = original_entries
+            .iter()
+            .position(|x| x.id == record.id)
+            .unwrap();
+        let original = original_entries.remove(index);
+        match patch_place(original, record) {
+            Ok(place) => {
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Ok(place),
+                });
+            }
+            Err(err) => {
+                results.push(CsvImportResult {
+                    record_nr,
+                    result: Err(CsvImportError::PatchRequest(err.to_string())),
+                });
+            }
+        }
+    }
+    Ok(results)
+}
+
+pub fn patches_from_reader<R: Read>(
+    r: R,
+) -> Result<(
+    Vec<(Uuid, usize, PatchPlaceRecord)>,
+    Vec<CsvImportResult<Entry>>,
+)> {
     let mut rdr = ReaderBuilder::new().from_reader(r);
     let mut results = vec![];
-
     let mut patch_place_records = vec![];
 
     for (record_nr, result) in rdr.deserialize::<PatchPlaceRecord>().enumerate() {
@@ -358,34 +398,7 @@ pub fn patch_places_with_reader<R: Read>(
             },
         }
     }
-    let uuids: Vec<_> = patch_place_records
-        .iter()
-        .map(|(uuid, _, _)| *uuid)
-        .collect();
-    let mut original_entries = read_entries(api, client, uuids)?;
-
-    for (_, record_nr, record) in patch_place_records {
-        let index = original_entries
-            .iter()
-            .position(|x| x.id == record.id)
-            .unwrap();
-        let original = original_entries.remove(index);
-        match patch_place(original, record) {
-            Ok(place) => {
-                results.push(CsvImportResult {
-                    record_nr,
-                    result: Ok(place),
-                });
-            }
-            Err(err) => {
-                results.push(CsvImportResult {
-                    record_nr,
-                    result: Err(CsvImportError::PatchRequest(err.to_string())),
-                });
-            }
-        }
-    }
-    Ok(results)
+    Ok((patch_place_records, results))
 }
 
 const OP_APPEND: &str = "++";
@@ -484,17 +497,20 @@ fn patch_place(mut original: Entry, record: PatchPlaceRecord) -> Result<Entry> {
     if let Some(tags) = tags {
         for tag in tags.split(',') {
             match patch_op(tag) {
-                Ok(PatchOp::Append(new_tag)) => {
+                Ok(Some(PatchOp::Append(new_tag))) => {
                     original.tags.push(new_tag.to_string());
                 }
-                Ok(PatchOp::Delete(remove_tag)) => {
+                Ok(Some(PatchOp::Delete(remove_tag))) => {
                     original.tags.retain(|t| t != remove_tag);
                 }
-                Ok(PatchOp::Replace(_)) => {
+                Ok(Some(PatchOp::Replace(_))) => {
                     log::warn!("Tags can't be replaced, only removed or added");
                 }
-                Ok(PatchOp::DeleteAll) => {
+                Ok(Some(PatchOp::DeleteAll)) => {
                     log::warn!("You must not remove all tags at once");
+                }
+                Ok(None) => {
+                    // nothing to to
                 }
                 Err(err) => {
                     log::warn!("Invalid tag patch operation: {err}");
@@ -527,8 +543,11 @@ fn patch_string_field(
     field: &mut String,
     patch: Option<String>,
 ) -> anyhow::Result<()> {
+    log::debug!("Patch {field_name} with {patch:?}");
     if let Some(patch) = patch {
-        let op = patch_op(&patch)?;
+        let Some(op) = patch_op(&patch)? else {
+            return Ok(());
+        };
         match op {
             PatchOp::Replace(replace) => {
                 *field = replace.to_string();
@@ -550,8 +569,11 @@ fn patch_optional_string_field(
     field: &mut Option<String>,
     patch: Option<String>,
 ) -> anyhow::Result<()> {
+    log::debug!("Patch optional {field_name} with {patch:?}");
     if let Some(patch) = patch {
-        let op = patch_op(&patch)?;
+        let Some(op) = patch_op(&patch)? else {
+            return Ok(());
+        };
         match op {
             PatchOp::Replace(replace) => {
                 *field = Some(replace.to_string());
@@ -581,8 +603,11 @@ fn patch_optional_date_field(
     field: &mut Option<Date>,
     patch: Option<String>,
 ) -> anyhow::Result<()> {
+    log::debug!("Patch optional {field_name} with {patch:?}");
     if let Some(patch) = patch {
-        let op = patch_op(&patch)?;
+        let Some(op) = patch_op(&patch)? else {
+            return Ok(());
+        };
         match op {
             PatchOp::Replace(replace) => {
                 let date: Date = serde_json::from_str(replace)?;
@@ -611,30 +636,33 @@ fn patch_float_field(
     field: &mut f64,
     patch: Option<String>,
 ) -> anyhow::Result<()> {
+    log::debug!("Patch {field_name} with {patch:?}");
     if let Some(patch) = patch {
-        let op = patch_op(&patch)?;
-        match op {
-            PatchOp::Replace(replace) => {
-                *field = replace.parse()?;
-            }
-            _ => {
-                return Err(anyhow!("You can only replace '{field_name}'"));
-            }
-        }
+        let Some(op) = patch_op(&patch)? else {
+            return Ok(());
+        };
+        let PatchOp::Replace(replace) = op else {
+            return Err(anyhow!("You can only replace '{field_name}'"));
+        };
+        *field = replace.parse()?;
     }
     Ok(())
 }
 
-fn patch_op(s: &str) -> Result<PatchOp<'_>, PatchOpError> {
+fn patch_op(s: &str) -> Result<Option<PatchOp<'_>>, PatchOpError> {
     let trimmed = s.trim();
+
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
 
     if trimmed.starts_with(OP_DELETE) {
         let delete = trimmed.split(OP_DELETE).nth(1).unwrap().trim();
-        return Ok(if delete.is_empty() {
+        return Ok(Some(if delete.is_empty() {
             PatchOp::DeleteAll
         } else {
             PatchOp::Delete(delete)
-        });
+        }));
     }
 
     if trimmed.starts_with(OP_APPEND) {
@@ -642,7 +670,7 @@ fn patch_op(s: &str) -> Result<PatchOp<'_>, PatchOpError> {
         if append.is_empty() {
             return Err(PatchOpError::EmptyString);
         }
-        return Ok(PatchOp::Append(append.trim()));
+        return Ok(Some(PatchOp::Append(append.trim())));
     }
 
     if trimmed.starts_with(OP_REPLACE) {
@@ -650,9 +678,8 @@ fn patch_op(s: &str) -> Result<PatchOp<'_>, PatchOpError> {
         if replace.is_empty() {
             return Err(PatchOpError::EmptyString);
         }
-        return Ok(PatchOp::Replace(replace.trim()));
+        return Ok(Some(PatchOp::Replace(replace.trim())));
     }
-
     Err(PatchOpError::NoOp)
 }
 
@@ -809,6 +836,13 @@ mod tests {
         assert!(updates[0].result.is_ok());
     }
 
+    #[test]
+    fn read_patch_updates_from_csv_file() {
+        let file = File::open("tests/update-patch-example.csv").unwrap();
+        let (patches, results) = patches_from_reader(file).unwrap();
+        assert_eq!(patches.len(), 4);
+    }
+
     mod patch {
 
         use super::*;
@@ -845,28 +879,37 @@ mod tests {
 
         #[test]
         fn append() {
-            assert_eq!(patch_op("++foo"), Ok(PatchOp::Append("foo")));
-            assert_eq!(patch_op("  ++foo"), Ok(PatchOp::Append("foo")));
-            assert_eq!(patch_op("++   foo"), Ok(PatchOp::Append("foo")));
+            assert_eq!(patch_op("++foo"), Ok(Some(PatchOp::Append("foo"))));
+            assert_eq!(patch_op("  ++foo"), Ok(Some(PatchOp::Append("foo"))));
+            assert_eq!(patch_op("++   foo"), Ok(Some(PatchOp::Append("foo"))));
             assert_eq!(patch_op("foo++"), Err(PatchOpError::NoOp));
             assert_eq!(patch_op("++"), Err(PatchOpError::EmptyString));
         }
 
         #[test]
         fn replace() {
-            assert_eq!(patch_op("==foo"), Ok(PatchOp::Replace("foo")));
-            assert_eq!(patch_op("  ==foo"), Ok(PatchOp::Replace("foo")));
-            assert_eq!(patch_op("==   foo"), Ok(PatchOp::Replace("foo")));
+            assert_eq!(patch_op("==foo"), Ok(Some(PatchOp::Replace("foo"))));
+            assert_eq!(patch_op("  ==foo"), Ok(Some(PatchOp::Replace("foo"))));
+            assert_eq!(patch_op("==   foo"), Ok(Some(PatchOp::Replace("foo"))));
             assert_eq!(patch_op("foo=="), Err(PatchOpError::NoOp));
             assert_eq!(patch_op("=="), Err(PatchOpError::EmptyString));
         }
 
         #[test]
         fn delete() {
-            assert_eq!(patch_op("--"), Ok(PatchOp::DeleteAll));
-            assert_eq!(patch_op("  --"), Ok(PatchOp::DeleteAll));
+            assert_eq!(patch_op("--"), Ok(Some(PatchOp::DeleteAll)));
+            assert_eq!(patch_op("  --"), Ok(Some(PatchOp::DeleteAll)));
             assert_eq!(patch_op("Foo bar --"), Err(PatchOpError::NoOp));
-            assert_eq!(patch_op("-- some text"), Ok(PatchOp::Delete("some text")));
+            assert_eq!(
+                patch_op("-- some text"),
+                Ok(Some(PatchOp::Delete("some text")))
+            );
+        }
+
+        #[test]
+        fn do_nothing() {
+            assert_eq!(patch_op(""), Ok(None));
+            assert_eq!(patch_op("   "), Ok(None));
         }
 
         #[test]
