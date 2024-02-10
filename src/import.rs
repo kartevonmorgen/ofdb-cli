@@ -12,7 +12,7 @@ pub enum Error {
     Other(String),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum CsvImportError {
     #[error("Could not read CSV record: {0}")]
     Record(String),
@@ -38,7 +38,7 @@ pub struct UpdateResult<'a> {
     pub result: result::Result<PlaceId, Error>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CsvImportResult<T> {
     pub record_nr: usize,
     pub result: result::Result<T, CsvImportError>,
