@@ -30,7 +30,10 @@ Make sure the CSV file has all required fields (an example can be found in [`tes
 ofdb --api-url https://dev.ofdb.io/v0/ import --opencage-api-key 2049603a30ec4cb8a96c2c7fe662dc96 --report-file import-report.json "entries.csv"
 ```
 
-NOTE: replace the OpenCage API key with a valid one.
+NOTE: 
+- replace the OpenCage API key with a valid one.
+- Checkout the [current API versions](https://github.com/kartevonmorgen/openfairdb/blob/main/doc/src/api_usage.md#endpoints)
+- Use the '--help'-Command in the cli to get the possible operation for each function
 
 #### CSV Import ignoring duplicates
 
