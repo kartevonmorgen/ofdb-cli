@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::{Args, Parser, Subcommand};
 use email_address_parser::EmailAddress;
 use ofdb_boundary::{Credentials, Entry, NewPlace, UpdatePlace};
@@ -162,6 +162,9 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf, patch: bool) -> R
 
     let places = match file_type {
         FileType::Json => {
+            if patch {
+                bail!("Patch updates are currently not supported for JSON files");
+            }
             let places: Vec<Entry> = serde_json::from_reader(reader)?;
             log::debug!("Read {} places from JSON file", places.len());
             places
@@ -173,24 +176,19 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf, patch: bool) -> R
                 csv::places_from_reader(reader)?
             };
             if csv_results.iter().any(|r| r.result.is_err()) {
-                let report = Report::from(csv_results);
+                let report = Report::from(csv_results.clone());
                 log::warn!(
                     "{} csv records contain errors ",
                     report.csv_import_failures.len()
                 );
                 write_import_report(report, report_file_path)?;
-                return Ok(());
-            } else {
-                if patch {
-                    return Err(anyhow!(
-                        "Patch updates are currently not supported for JSON files"
-                    ));
-                }
-                let places: Vec<Entry> =
-                    csv_results.into_iter().map(|r| r.result.unwrap()).collect();
-                log::debug!("Import {} places from CSV file", places.len());
-                places
             }
+            let places: Vec<_> = csv_results
+                .into_iter()
+                .filter_map(|r| r.result.ok())
+                .collect();
+            log::debug!("Import {} places from CSV file", places.len());
+            places
         }
     };
 
@@ -203,7 +201,7 @@ fn update(api: &str, path: PathBuf, report_file_path: PathBuf, patch: bool) -> R
                 log::debug!("Successfully updated '{}' with ID={}", update.title, id);
             }
             Err(err) => {
-                log::warn!("Could not update '{}': {}", update.title, err);
+                log::warn!("Could not update '{}': {err}", update.title);
             }
         }
     }
