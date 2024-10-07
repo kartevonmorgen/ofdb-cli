@@ -1,0 +1,39 @@
+[workspace]
+members = [
+
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.79"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# The error types returned should be self-explanatory.
+missing_errors_doc = "allow"
+
+# In `leptos` applications it's a very
+# common pattern to use `leptos::*`.
+wildcard_imports = "allow"
+
+# This is a matter of taste.
+mod_module_files = "allow"
+
+[package]
+name = "ofdb-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+console_error_panic_hook = "0.1.7"
+console_log = { version = "1.0.0", features = ["color"] }
+leptos = { version = "0.6.15", features = ["csr"] }
+log = "0.4.22"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+codegen-units = 1
